@@ -29,7 +29,7 @@ STAR = 3
 LED_SET = [list(range(25)[::3]), list(range(25)[1::3]), list(range(25)[2::3])]
 
 # Create an instance of an RGBXmasTree
-tree = RGBXmasTree(brightness=0.05)
+tree = RGBXmasTree(brightness=0.1)
 colors = [Color('red'),Color('green'),Color('blue')]
 # Initialise the LEDs to starting colours
 for i, leds in enumerate(LED_SET):
@@ -43,8 +43,8 @@ try:
         for leds in LED_SET:
             for led in leds:
                 tree[led].color += Hue(deg=10)
-        #tree[STAR].color = Color('black')
-        #sleep(0.001)
+        tree[STAR].color = Color('black')
+        #sleep(0.01)
         tree[STAR].color = Color('white')
 except KeyboardInterrupt:
     tree.close()
