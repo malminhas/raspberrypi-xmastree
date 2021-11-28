@@ -209,11 +209,16 @@ if __name__ == '__main__':
         except awscrt.exceptions.AwsCrtError as e:
             # Can get here on boot with:
             # AWS_IO_DNS_QUERY_FAILED: A query to dns failed to resolve.
+            print('Caught awscrt.exceptions.AwsCrtError')
+            ret = -1
+        except Exception as e:
+            print(e)
             ret = -1
         return ret
 
     while True:
-        if initialiseLoop() == 0:
+        r = initialiseLoop()
+        if r == 0:
             sys.exit(0)
         else:
             retry = 2
