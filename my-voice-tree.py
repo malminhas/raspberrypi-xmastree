@@ -34,6 +34,7 @@
 #
 
 import re
+import os
 import sys
 import boto3
 import awscrt
@@ -226,7 +227,8 @@ async def waitForPolly():
             status = await process.wait()
             print(f"dropping out of await. STATE={STATE}, LAST_STATE={LAST_STATE}")
             """
-            speechFile = 'speech.mp3'
+            cwd = os.environ["WORKING_DIR"]
+            speechFile = f'{cwd}/speech.mp3'
             print(f"Using vlc to play {speechFile} - non-blocking")
             # Switched to using threads to avoid blocking
             x2 = threading.Thread(target=playSpeech, args=(speechFile,), daemon=False)
@@ -237,7 +239,8 @@ async def waitForPolly():
             LAST_STATE = 'speak'
             print(f"Switching back to {STATE}")
         elif STATE == 'generate':
-            speechFile = 'generate.mp3'
+            cwd = os.environ["WORKING_DIR"]
+            speechFile = f'{cwd}/generate.mp3'
             print(f"Generating speech file {speechFile} - blocking")
             x1 = threading.Thread(target=generateMp3WithPolly, args=(TEXT,speechFile,), daemon=False)
             x1.start()
