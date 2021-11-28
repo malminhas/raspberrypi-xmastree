@@ -227,7 +227,9 @@ async def waitForPolly():
             status = await process.wait()
             print(f"dropping out of await. STATE={STATE}, LAST_STATE={LAST_STATE}")
             """
-            cwd = os.environ["WORKING_DIR"]
+            cwd = os.environ.get("WORKING_DIR")
+            if not cwd:
+                cwd = '.'
             speechFile = f'{cwd}/speech.mp3'
             print(f"Using vlc to play {speechFile} - non-blocking")
             # Switched to using threads to avoid blocking
@@ -239,7 +241,9 @@ async def waitForPolly():
             LAST_STATE = 'speak'
             print(f"Switching back to {STATE}")
         elif STATE == 'generate':
-            cwd = os.environ["WORKING_DIR"]
+            cwd = os.environ.get("WORKING_DIR")
+            if not cwd:
+                cwd = '.'
             speechFile = f'{cwd}/generate.mp3'
             print(f"Generating speech file {speechFile} - blocking")
             x1 = threading.Thread(target=generateMp3WithPolly, args=(TEXT,speechFile,), daemon=False)
