@@ -30,6 +30,7 @@
 # 27.11.21    v0.1    First cut
 # 28.11.21    v0.2    Voice control tested and working on Raspberry Pi
 # 28.11.21    v0.3    Added support for wait looping on network
+# 28.11.21    v0.4    Added basic support for playing back mp3 and using Polly
 #
 
 import re
@@ -37,7 +38,9 @@ import sys
 import boto3
 import awscrt
 import asyncio
+import threading
 import sounddevice
+from asyncio.subprocess import PIPE
 from amazon_transcribe.client import TranscribeStreamingClient
 from amazon_transcribe.handlers import TranscriptResultStreamHandler
 from amazon_transcribe.model import TranscriptEvent
@@ -53,36 +56,48 @@ STAR = 3
 TREE_LED_SET = [list(range(25)[::3]), list(range(25)[1::3]), list(range(25)[2::3])]
 LAST_STATE = 'disco'
 STATE = 'disco'
-TEXT = 'This is some text from GPT 3'
+TEXT = 'Hello everyone this is your Christmas Tree talking'
 SUPPORTED_COLORS = ['red','green','blue','yellow','orange','purple','white','black','brown','disco','phase']
 
 class TranscribeEventHandler(TranscriptResultStreamHandler):
     async def handle_transcript_event(self, transcript_event: TranscriptEvent):
         #print("TranscribeEventHandler: ENTER")
-        global STATE, LAST_STATE
+        global STATE, LAST_STATE, TEXT
         # Handles text transcriptions
-        xmasTree = re.compile(r'christmas tree (\w+)')
+        speakToMe = re.compile(r'christmas tree(\.|s)? (speak|talk|talked)( to me)?')
+        xmasTree = re.compile(r'christmas tree(\.|s)? (\w+)(.*)')
         results = transcript_event.transcript.results
         for result in results:
             for i,alt in enumerate(result.alternatives):
                 text = alt.transcript.lower()
-                print(f"{i}:'{alt.transcript}'")
+                print(f"{i}:'{alt.transcript}' ({text})")
                 xres = re.match(xmasTree,text)
-                if xres and xres[1] in SUPPORTED_COLORS:
-                    new_state = xres[1]
+                sres = re.match(speakToMe,text)
+                print(f"xres={xres},sres={sres}")
+                def switchState(new_state):
+                    global STATE, LAST_STATE
                     if STATE == new_state:
-                        print(f"We are already in {STATE}")
+                        print(f"We are already in STATE {STATE} - skipping")
                     else:
-                        print(f"STATE CHANGE: {new_state}!")
                         LAST_STATE = STATE
                         STATE = new_state
+                        print(f"STATE CHANGE: '{new_state}' LAST_STATE={LAST_STATE}")                    
+                if sres:
+                    switchState('speak')
+                    break
+                elif xres:
+                    print(xres[0],xres[1],xres[2],xres[3])
+                    if xres[2] in SUPPORTED_COLORS:
+                        switchState(xres[2])
                         if STATE == 'disco':
                             initXmasTree()
-                    break
-                elif ' talk to me ' in text:
-                    new_state = 'speak'
-                    print(f"STATE CHANGE: {new_state}!")
-                    break
+                        break
+                    else:
+                        if xres[2][:8] == 'generate':
+                            TEXT = xres[3]
+                            if len(TEXT.strip()) > 10:
+                               switchState('generate')
+                               break
         #print("TranscribeEventHandler: EXIT")
 
 async def micStream():
@@ -141,36 +156,104 @@ async def lightUpXmasTree():
                     for led in leds:
                         TREE[led].color += Hue(deg=10)
                 TREE[STAR].color = Color('white')
+                LAST_STATE = STATE
             elif STATE in SUPPORTED_COLORS:
                 # Solid color
                 for leds in TREE_LED_SET:
                     for led in leds:
                         TREE[led].color = Color(STATE)
                 TREE[STAR].color = Color('white')
+                LAST_STATE = STATE
             else:
-                print(f'Unknown state {STATE}')
+                # print(f"Skipping unknown state {STATE}')
+                pass
             await asyncio.sleep(0.01) # non-blocking
-            LAST_STATE = STATE
     except:
         print("Exiting tree")
         TREE.close()
     print("lightUpXmasTree: EXIT")
     raise KeyboardInterrupt
 
+def playSpeech(speech):
+    import vlc
+    import time
+    print(f"playSpeech({speech})")
+    player = vlc.MediaPlayer(speech)
+    player.play()
+    time.sleep(10)
+    player.stop()
+
+def generateMp3WithPolly(text, file):
+    """ From AWS Getting Started Example """
+    from boto3 import Session
+    from botocore.exceptions import BotoCoreError, ClientError
+    from contextlib import closing
+    #from tempfile import gettempdir
+
+    print(f"Generating polly file {file} from: '{text}'")
+    polly_client = boto3.Session(region_name='us-west-2').client('polly')
+    response = polly_client.synthesize_speech(VoiceId='Joanna',
+                OutputFormat='mp3', 
+                Text = text,
+                Engine = 'neural')
+    file = open(file, 'wb')
+    file.write(response['AudioStream'].read())
+    file.close()
+    
 async def waitForPolly():
+    print("waitForPolly: ENTER")
     global TEXT, STATE, LAST_STATE
     while True:
-        asyncio.sleep(0.1)
+        await asyncio.sleep(0.1)
+        print(f"polly state: {STATE}")
         if STATE == 'speak':
-            print(f"Writing text {TEXT} to {output}")
-            output = 'output.mp3'
-            speech = await polly.synthesize_speech(TEXT, voice_id=VoiceID.Joanna)
-            await speech.save_on_disc(filename=output)
-            print(f"Written {output}")
+            # Initially tried this using asyncio.create_subprocess_exec using a local script
+            """
+            speechFile = 'speech2.mp3'
+            process = await asyncio.create_subprocess_exec(
+                'python',
+                'testVlc.py',
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            process = await asyncio.create_subprocess_shell(
+                f'python testVlc.py',
+                stdout=PIPE,
+                stderr=PIPE,
+            )
+            print("going into process communicate")
+            (output,err) = await process.communicate()
+            status = await process.wait()
+            print(f"dropping out of await. STATE={STATE}, LAST_STATE={LAST_STATE}")
+            """
+            speechFile = 'speech.mp3'
+            print(f"Using vlc to play {speechFile} - non-blocking")
+            # Switched to using threads to avoid blocking
+            x2 = threading.Thread(target=playSpeech, args=(speechFile,), daemon=False)
+            x2.start()
+            #x2.join() # uncomment this to block on completion
+            print(f"dropping out after starting vlc thread. STATE={STATE}, LAST_STATE={LAST_STATE}")
+            STATE = LAST_STATE
+            LAST_STATE = 'speak'
+            print(f"Switching back to {STATE}")
+        elif STATE == 'generate':
+            speechFile = 'generate.mp3'
+            print(f"Generating speech file {speechFile} - blocking")
+            x1 = threading.Thread(target=generateMp3WithPolly, args=(TEXT,speechFile,), daemon=False)
+            x1.start()
+            x1.join() # uncomment this to block on completion
+            print(f"Using vlc to play {speechFile} - non-blocking")
+            # Switched to using threads to avoid blocking
+            x2 = threading.Thread(target=playSpeech, args=(speechFile,), daemon=False)
+            x2.start()
+            #x2.join() # uncomment this to block on completion
+            print(f"dropping out after starting vlc thread. STATE={STATE}, LAST_STATE={LAST_STATE}")
             STATE = LAST_STATE
             LAST_STATE = 'speak'
             print(f"Switching back to {STATE}")
 
+            
+        
 def synthesizeText(text):
     polly_client = boto3.Session(region_name='us-west-2').client('polly')
     response = polly_client.synthesize_speech(VoiceId='Joanna',
@@ -191,8 +274,8 @@ async def initializeVoiceTree():
         media_encoding = "pcm",
     )
     handler = TranscribeEventHandler(stream.output_stream)
-    #await asyncio.gather(writeChunks(stream), handler.handle_events(), lightUpXmasTree(), waitForPolly())
-    await asyncio.gather(writeChunks(stream), handler.handle_events(), lightUpXmasTree())
+    await asyncio.gather(writeChunks(stream), handler.handle_events(), lightUpXmasTree(), waitForPolly())
+    #await asyncio.gather(writeChunks(stream), handler.handle_events(), lightUpXmasTree())
 
 if __name__ == '__main__':
     def initialiseLoop():
