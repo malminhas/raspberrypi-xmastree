@@ -29,20 +29,22 @@
 # -------
 # 27.11.21    v0.1    First cut
 # 28.11.21    v0.2    Voice control tested and working on Raspberry Pi
+# 28.11.21    v0.3    Added support for wait looping on network
 #
 
+import re
+import sys
+import boto3
+import awscrt
 import asyncio
 import sounddevice
 from amazon_transcribe.client import TranscribeStreamingClient
 from amazon_transcribe.handlers import TranscriptResultStreamHandler
 from amazon_transcribe.model import TranscriptEvent
-#from aiopolly import Polly
-#from aiopolly.types import AudioFormat, LanguageCode, VoiceID
 from tree import RGBXmasTree
 from colorzero import Color, Hue
 from time import sleep
 from random import random
-import re
 
 # Create an instance of an RGBXmasTree    
 TREE = RGBXmasTree(brightness=0.3)
@@ -169,6 +171,16 @@ async def waitForPolly():
             LAST_STATE = 'speak'
             print(f"Switching back to {STATE}")
 
+def synthesizeText(text):
+    polly_client = boto3.Session(region_name='us-west-2').client('polly')
+    response = polly_client.synthesize_speech(VoiceId='Joanna',
+                                              OutputFormat='mp3', 
+                                              Text = 'This is a sample text to be synthesized.',
+                                              Engine = 'neural')
+    with open('speech.mp3', 'wb'):
+        file.write(response['AudioStream'].read())
+
+            
 async def initializeVoiceTree():
     # setup client with chosen AWS region
     client = TranscribeStreamingClient(region = "us-west-2")
@@ -182,13 +194,28 @@ async def initializeVoiceTree():
     #await asyncio.gather(writeChunks(stream), handler.handle_events(), lightUpXmasTree(), waitForPolly())
     await asyncio.gather(writeChunks(stream), handler.handle_events(), lightUpXmasTree())
 
-    
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(initializeVoiceTree())
-        loop.close()
-    except KeyboardInterrupt:
-        print('Exiting main loop')
+    def initialiseLoop():
+        ret = 0
+        print("initialise loop")
+        try:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(initializeVoiceTree())
+            print('closing loop')
+            loop.close()
+        except KeyboardInterrupt:
+            print('Exiting main loop')
+        except awscrt.exceptions.AwsCrtError as e:
+            # Can get here on boot with:
+            # AWS_IO_DNS_QUERY_FAILED: A query to dns failed to resolve.
+            ret = -1
+        return ret
 
-    
+    while True:
+        if initialiseLoop() == 0:
+            sys.exit(0)
+        else:
+            retry = 2
+            print(f'Retrying after {retry} secs..')
+            sleep(retry)
