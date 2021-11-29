@@ -1,22 +1,33 @@
-#!/usr/bin/env python3
-# <mal@malm.co.uk>
-# 21.11.21
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 #
 # my-tree.py
-# ----------
-# RGB Xmas tree from Pi Hut.  See here for details:
-# https://thepihut.com/products/3d-rgb-xmas-tree-for-raspberry-pi
-# Use PiHut's rgbxmastree tree module here:
-# https://github.com/ThePiHut/rgbxmastree
-# Download the tree module to your local directory as follows:
-# wget https://bit.ly/2Lr9CT3 -O tree.py
-# To ensure this script runs at boot add the following line to /etc/rc.local:
-# python3 /home/pi/raspberrypi-xmas/my-tree.py
-# assuming you git cloned this repo to your home directory
+# ----------------
+# (c) 2021 Mal Minhas, <mal@malm.co.uk>
 #
-# This script builds on PiHut's huecycle.py script.
-# It cycles three groups of tree lights through 10 degrees of hue
-# and leaves the top light flashing white.
+# my-tree.py
+# ----------------
+# Simple disco lights pattern for RGB Xmas tree for the Raspberry Pi 4 available from Pi Hut.  
+# See here for details:
+# https://thepihut.com/products/3d-rgb-xmas-tree-for-raspberry-pi
+#
+# Installation:
+# -------------
+# See accompanying readme for full details on how to setup both the
+# RGB Xmas tree as well as AWS Transcribe and Polly functionality on
+# a Raspberry Pi 4.
+#
+# Implementation:
+# --------------
+# Uses PiHut's rgbxmastree tree module here: https://github.com/ThePiHut/rgbxmastree
+# Download the tree module to your local directory as follows: wget https://bit.ly/2Lr9CT3 -O tree.py
+# This script builds on PiHut's huecycle.py script cycling three groups of tree lights through 10 degrees 
+# of hue and leaving the top light flashing white.
+#
+# History:
+# -------
+# 21.11.21    v0.1    First cut
+# 29.11.21    v0.2    Updated this template
 #
 
 from tree import RGBXmasTree
