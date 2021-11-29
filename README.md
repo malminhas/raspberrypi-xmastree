@@ -1,4 +1,4 @@
-# raspberrypi-xmas
+# raspberrypi-xmastree
 
 ## Introduction
 This repository contains some experiments with PiHut's [3D Xmas Tree](https://thepihut.com/products/3d-xmas-tree-for-raspberry-pi). There are two core scripts:
@@ -38,7 +38,11 @@ To run `my-voice-tree.py` for a voice-controlled tree you will need to do some a
 * It's a good idea to also change locale character set to UTF-8 for dumping to terminal.  You can change it as explained [here](https://raspberrytips.com/change-language-raspberry-pi/) by going to `Raspberry Pi Configuration -> Localisation -> Locale -> Character Set UTF-8`
 
 ## Software Configuration
-There are a number of separate steps involved in setting up your Raspberry Pi 4 software environment. 
+There are a number of separate steps involved in setting up your Raspberry Pi 4 software environment.  If you already have `virtualenv` and AWS `awscli` support in place on your Raspberry Pi, you should be able to fast track all this by installing all `python` requirements thus:
+```
+(aws) $ pip install -r requirements.txt
+```
+The following sections provided more a more detailed walk-through.
 
 ### Python3
 Change the `/usr/bin/python` link to point to `python3` if it is pointing to `python2`.
@@ -109,7 +113,7 @@ Now you can test that it all works using `awscli` thus:
 }
 ```
 
-### aws-polly
+### AWS Polly
 [Amazon Polly](https://aws.amazon.com/polly/) is an AWS service that turns text into lifelike speech, allowing you to create applications that talk, and build entirely new categories of speech-enabled products. Polly's Text-to-Speech (TTS) service uses advanced deep learning technologies to synthesize natural sounding human speech.  You can access it from AWS CLI to create a playable local .mp3 file as follows:
 ```
 (aws) $ aws polly synthesize-speech —output-format mp3 —voice-id Joanna —text ‘May the force be with you!’ star.mp3
@@ -119,7 +123,7 @@ AWS Polly is supported via `boto3` which you need to install as follows:
 (aws) $ pip install boto3
 ```
 
-### aws-transcribe
+### AWS Transcribe
 [Amazon Transcribe](https://aws.amazon.com/transcribe/) is an automatic speech recognition (ASR) service that makes it easy for developers to add speech to text capability to their applications and pay as they go.   You can check you are able to round trip the previous mp3 back to text using `awscli` per the instructions [here](https://docs.aws.amazon.com/transcribe/latest/dg/getting-started-cli.html).  You can download the example code to try it out as follows:
 ```
 (aws) $ pip install amazon-transcribe
