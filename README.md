@@ -9,7 +9,7 @@ tree that [cycles the LEDs](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/gip
 
 `my-tree.py`               |  `my-voice-tree.py`
 :-------------------------:|:-------------------------:
-![disco tree](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized.gif)  |  [![voice tree](voice-tree.jpg)](https://www.youtube.com/watch?v=oPNQIW4BptQ)
+[![disco tree](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized.gif)](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized-large.gif)  | <a href="https://www.youtube.com/watch?v=oPNQIW4BptQ"><img src="voice-tree.jpg" alt="voice tree" width="240"/></a>
 
 ## Equipment List
 Here's the full set of kit you need to recreate the both the disco and voice-controlled trees together with their prices as of November 2021:
@@ -19,7 +19,7 @@ Here's the full set of kit you need to recreate the both the disco and voice-con
 * **ReSpeaker USB Mic Array**: Available from Pimoroni [here](https://shop.pimoroni.com/products/respeaker-usb-mic-array) for £63.
 * **3 way jack connected speaker**: A cheap non-powered one is fine as we will plug into into the ReSpeaker unit for amplification. You can pick [one of these](https://www.amazon.co.uk/TRIXES-Portable-Travel-Speaker-iPhone/dp/B003TKTUUY) up on Amazon for under £10.
 
-Total price for the above kit is £153.  You will also need a monitor, keyboard, mouse and associated cables to connect to the Raspberry Pi.
+Total price for the above kit is £153.  You will also need a monitor, keyboard, mouse and associated cables for the Raspberry Pi.
 
 ## Hardware Configuration
 For both scripts you need to first follow the PiHut instructions for how to construct the 3D Xmas tree.  It's relatively straightforward for the pre-soldered tree which is comprised of three separate sections that clip together.  Once you have plugged your tree into GPIO on a Raspberry Pi 4, no additional dependencies are required in order to run `my-tree.py` apart from `tree.py` which you download as follows before running the script to test everything works.  This should work because Python GPIO support is available out of the box on the Raspberry Pi 4 and this is the only additional dependency needed for `my-tree.py`:
@@ -188,8 +188,8 @@ source /home/.pi/Desktop/CODE/local.env
 python /home/pi/Desktop/CODE/raspberrypi-xmastree/my-voice-tree.py
 ```
 * Test your `/etc/rc.local` changes will work as follows:
-* ```
+```
 $ sudo /etc/rc.local
 ```
-* Reboot.
-There is on remaining problem which is to get `pulseaudio` to start on headless boot.  On the Raspberry it only starts up when booting into Desktop.  [This](https://askubuntu.com/questions/28176/how-do-i-run-pulseaudio-in-a-headless-server-installation) looks like a useful starting point.
+* Reboot
+There is one remaining problem which is to get `pulseaudio` to start on headless boot.  On the Raspberry it only starts up when booting into Desktop.  [This resource](https://askubuntu.com/questions/28176/how-do-i-run-pulseaudio-in-a-headless-server-installation) looks like a useful starting point.
