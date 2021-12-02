@@ -1,4 +1,4 @@
-# raspberrypi-xmastree
+# A voice-controlled Raspberry Pi Christmas Tree
 
 ## Introduction
 This repository contains some experiments with PiHut's [3D Xmas Tree](https://thepihut.com/products/3d-xmas-tree-for-raspberry-pi). There are two core scripts:
