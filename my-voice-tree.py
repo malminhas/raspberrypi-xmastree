@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
@@ -58,23 +59,21 @@ TREE_LED_SET = [list(range(25)[::3]), list(range(25)[1::3]), list(range(25)[2::3
 LAST_STATE = 'disco'
 STATE = 'disco'
 TEXT = 'Hello everyone this is your Christmas Tree talking'
-SUPPORTED_COLORS = ['red','green','blue','yellow','orange','purple','white','black','brown','disco','phase']
+AUDIO = ''
+SUPPORTED_COLORS = ['red','green','blue','yellow','orange','purple','white','pink','black','brown','disco','phase']
 
 class TranscribeEventHandler(TranscriptResultStreamHandler):
     async def handle_transcript_event(self, transcript_event: TranscriptEvent):
         #print("TranscribeEventHandler: ENTER")
-        global STATE, LAST_STATE, TEXT
-        # Handles text transcriptions
-        speakToMe = re.compile(r'christmas tree(\.|s)? (speak|talk|talked)( to me)?')
-        xmasTree = re.compile(r'christmas tree(\.|s)? (\w+)(.*)')
+        global STATE, LAST_STATE, TEXT, AUDIO
+        # Handle text transcriptions
+        xmasTree = re.compile(r'(christmas tree)(\.|\,|s)?\s+(\w+)(.*)')
         results = transcript_event.transcript.results
         for result in results:
             for i,alt in enumerate(result.alternatives):
                 text = alt.transcript.lower()
                 print(f"{i}:'{alt.transcript}' ({text})")
                 xres = re.match(xmasTree,text)
-                sres = re.match(speakToMe,text)
-                print(f"xres={xres},sres={sres}")
                 def switchState(new_state):
                     global STATE, LAST_STATE
                     if STATE == new_state:
@@ -82,23 +81,30 @@ class TranscribeEventHandler(TranscriptResultStreamHandler):
                     else:
                         LAST_STATE = STATE
                         STATE = new_state
-                        print(f"STATE CHANGE: '{new_state}' LAST_STATE={LAST_STATE}")                    
-                if sres:
-                    switchState('speak')
-                    break
-                elif xres:
-                    print(xres[0],xres[1],xres[2],xres[3])
-                    if xres[2] in SUPPORTED_COLORS:
-                        switchState(xres[2])
+                        print(f"STATE CHANGE: '{new_state}' LAST_STATE={LAST_STATE}")
+                if xres:
+                    print(f"MATCH! xres[0]='{xres[0]}',xres[1]='{xres[1]}',xres[2]='{xres[2]}',xres[3]='{xres[3]}',xres[4]='{xres[4]}'")
+                    if xres[3] in SUPPORTED_COLORS:
+                        switchState(xres[3])
                         if STATE == 'disco':
                             initXmasTree()
                         break
+                    elif xres[3] in ['speak','talk','talked']:
+                        AUDIO = 'speech.mp3'
+                        switchState('speak')
+                        break
+                    elif xres[3] in ['sing','saying']:
+                        AUDIO = '08-I-Wish-it-Could-be-Christmas-Everyday.mp3'
+                        switchState('speak')
+                        break
+                    elif xres[3] == 'generate':
+                        TEXT = xres[4].replace('.','')
+                        if len(TEXT.strip()) >= 10:
+                            #TEXT = "You didn't give me anything to generate"
+                            switchState('generate')
+                            break
                     else:
-                        if xres[2][:8] == 'generate':
-                            TEXT = xres[3]
-                            if len(TEXT.strip()) > 10:
-                               switchState('generate')
-                               break
+                        print(f"Cannot handle '{xres[3]}'")
         #print("TranscribeEventHandler: EXIT")
 
 async def micStream():
@@ -163,7 +169,8 @@ async def lightUpXmasTree():
                 for leds in TREE_LED_SET:
                     for led in leds:
                         TREE[led].color = Color(STATE)
-                TREE[STAR].color = Color('white')
+                if STATE not in ['black']:
+                    TREE[STAR].color = Color('white')
                 LAST_STATE = STATE
             else:
                 # print(f"Skipping unknown state {STATE}')
@@ -175,13 +182,13 @@ async def lightUpXmasTree():
     print("lightUpXmasTree: EXIT")
     raise KeyboardInterrupt
 
-def playSpeech(speech):
+def playSpeech(speech,length):
     import vlc
     import time
     print(f"playSpeech({speech})")
     player = vlc.MediaPlayer(speech)
     player.play()
-    time.sleep(10)
+    time.sleep(length)
     player.stop()
 
 def generateMp3WithPolly(text, file):
@@ -203,10 +210,10 @@ def generateMp3WithPolly(text, file):
     
 async def waitForPolly():
     print("waitForPolly: ENTER")
-    global TEXT, STATE, LAST_STATE
+    global TEXT, STATE, LAST_STATE, AUDIO
     while True:
         await asyncio.sleep(0.1)
-        print(f"polly state: {STATE}")
+        #print(f"polly state: {STATE}")
         if STATE == 'speak':
             # Initially tried this using asyncio.create_subprocess_exec using a local script
             """
@@ -230,10 +237,13 @@ async def waitForPolly():
             cwd = os.environ.get("WORKING_DIR")
             if not cwd:
                 cwd = '.'
-            speechFile = f'{cwd}/speech.mp3'
+            speechFile = f'{cwd}/{AUDIO}'
+            length = 360
+            if AUDIO == 'speech.mp3':
+                length = 10
             print(f"Using vlc to play {speechFile} - non-blocking")
             # Switched to using threads to avoid blocking
-            x2 = threading.Thread(target=playSpeech, args=(speechFile,), daemon=False)
+            x2 = threading.Thread(target=playSpeech, args=(speechFile,length), daemon=False)
             x2.start()
             #x2.join() # uncomment this to block on completion
             print(f"dropping out after starting vlc thread. STATE={STATE}, LAST_STATE={LAST_STATE}")
