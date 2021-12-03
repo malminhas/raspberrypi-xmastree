@@ -9,7 +9,7 @@ tree that [cycles the LEDs](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/gip
 
 `my-tree.py`               |  `my-voice-tree.py`
 :-------------------------:|:-------------------------:
-[![disco tree](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized.gif)](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized-large.gif)  | <a href="https://www.youtube.com/watch?v=oPNQIW4BptQ"><img src="voice-tree.jpg" alt="voice tree" width="240"/></a>
+[![disco tree](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized.gif)](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized-large.gif)  | <a href="https://youtu.be/YopBvuAIyBU"><img src="voice-tree.jpg" alt="voice tree" width="240"/></a>
 
 ## Equipment List
 Here's the full set of kit you need to recreate the both the disco and voice-controlled trees together with their prices as of November 2021:
