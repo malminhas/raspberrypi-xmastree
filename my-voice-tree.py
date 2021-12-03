@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
@@ -87,7 +86,7 @@ class TranscribeEventHandler(TranscriptResultStreamHandler):
                     if xres[3] in SUPPORTED_COLORS:
                         switchState(xres[3])
                         if STATE == 'disco':
-                            initXmasTree()
+                            initXmasTree(darkMode=False)
                         break
                     elif xres[3] in ['speak','talk','talked']:
                         AUDIO = 'speech.mp3'
@@ -138,21 +137,29 @@ async def writeChunks(stream):
     await stream.input_stream.end_stream()
     print("writeChunks: EXIT")
 
-def initXmasTree():
-    print("initXmasTree")
+def initXmasTree(darkMode):
+    print(f"initXmasTree(darkMode={darkMode})")
     global TREE, STATE
-    assert(STATE == 'disco')
-    # Initialise the LEDs to starting colours
-    colors = [Color('red'),Color('green'),Color('blue')]
-    for i, leds in enumerate(TREE_LED_SET):
-        for led in leds:
-            TREE[led].color = colors[i]
-    # Colour top LED white
-    TREE[STAR].color = Color('white')
+    if darkMode:
+        STATE = 'black'
+        for i, leds in enumerate(TREE_LED_SET):
+            for led in leds:
+                TREE[led].color = Color('black')
+        # Colour top LED white
+        TREE[STAR].color = Color('black')
+    else:
+        assert(STATE == 'disco')
+        # Initialise the LEDs to starting colours
+        colors = [Color('red'),Color('green'),Color('blue')]
+        for i, leds in enumerate(TREE_LED_SET):
+            for led in leds:
+                TREE[led].color = colors[i]
+        # Colour top LED white
+        TREE[STAR].color = Color('white')
 
 async def lightUpXmasTree():
     print("lightUpXmasTree: ENTER")
-    initXmasTree()
+    initXmasTree(darkMode=False)
     try:
         global TREE, TREE_LED_SET, SUPPORTED_COLORS, STATE, LAST_STATE
         while True:
@@ -196,7 +203,6 @@ def generateMp3WithPolly(text, file):
     from boto3 import Session
     from botocore.exceptions import BotoCoreError, ClientError
     from contextlib import closing
-    #from tempfile import gettempdir
 
     print(f"Generating polly file {file} from: '{text}'")
     polly_client = boto3.Session(region_name='us-west-2').client('polly')
@@ -269,8 +275,7 @@ async def waitForPolly():
             LAST_STATE = 'speak'
             print(f"Switching back to {STATE}")
 
-            
-        
+
 def synthesizeText(text):
     polly_client = boto3.Session(region_name='us-west-2').client('polly')
     response = polly_client.synthesize_speech(VoiceId='Joanna',
