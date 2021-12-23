@@ -113,6 +113,7 @@ Now you can test that it all works using `awscli` thus:
 }
 ```
 
+
 ### AWS Polly
 [Amazon Polly](https://aws.amazon.com/polly/) is an AWS service that turns text into lifelike speech, allowing you to create applications that talk, and build entirely new categories of speech-enabled products. Polly's Text-to-Speech (TTS) service uses advanced deep learning technologies to synthesize natural sounding human speech.  You can access it from AWS CLI to create a playable local .mp3 file as follows:
 ```
@@ -158,6 +159,11 @@ You should now finally be able to light up the voice controlled tree:
 (aws) $ python my-voice-tree.py
 ```
 
+### Utilisizin
+The following diagram illustrates how [`my-voice-tree.py.py`](https://github.com/malminhas/raspberrypi-xmastree/blob/main/my-voice-tree.py) leverages AWS Transcribe and AWS Polly.  AWS Transcribe is used to convert speech to text when for example commanding the tree to change its LEDs green with a _"christmas tree green"_ utterance.  AWS Polly is used to convert text to speech with the _"christmas tree generate this is some kind of message"_ utterance resulting in the tree responding a short time later with _"this is some kind of message"_.
+
+![image](https://user-images.githubusercontent.com/12896870/147266186-7bae3382-1e16-4e71-9149-aa66e55918d4.png)
+
 ## Run on boot
 
 ### `my-tree.py`
@@ -172,8 +178,8 @@ $ sudo /etc/rc.local
 ```
 Once you've tested it works you should be able to run your tree off a discreetly connected USB-C power pack and it should look like [this](https://media2.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy.gif?cid=790b761151d2a971a18df841f08595c8b9b9747719aaa76e&rid=giphy.gif&ct=g):
 
-### `my-voice-tree.py`
-Running `my-voice-tree.py` at boot is more complicated because of the additional dependencies on having network connectivity and audio and microphone support.  Some of the steps involved are as follows:
+### [`my-voice-tree.py`](https://github.com/malminhas/raspberrypi-xmastree/blob/main/my-voice-tree.py)
+Running [`my-voice-tree.py`](https://github.com/malminhas/raspberrypi-xmastree/blob/main/my-voice-tree.py) at boot is more complicated because of the additional dependencies on having network connectivity and audio and microphone support.  Some of the steps involved are as follows:
 * Set up the following environment variables at boot in a `local.env` file:
 ```
 WORKING_DIR
