@@ -159,7 +159,7 @@ You should now finally be able to light up the voice controlled tree:
 (aws) $ python my-voice-tree.py
 ```
 
-### Utilisizin
+### Using AWS Transcrbe and Polly
 The following diagram illustrates how [`my-voice-tree.py.py`](https://github.com/malminhas/raspberrypi-xmastree/blob/main/my-voice-tree.py) leverages AWS Transcribe and AWS Polly.  AWS Transcribe is used to convert speech to text when for example commanding the tree to change its LEDs green with a _"christmas tree green"_ utterance.  AWS Polly is used to convert text to speech with the _"christmas tree generate this is some kind of message"_ utterance resulting in the tree responding a short time later with _"this is some kind of message"_.
 
 ![image](https://user-images.githubusercontent.com/12896870/147274487-39548bf2-7602-4b4b-a5b1-2b30e0ec2fac.png)
