@@ -83,27 +83,29 @@ class TranscribeEventHandler(TranscriptResultStreamHandler):
                         print(f"STATE CHANGE: '{new_state}' LAST_STATE={LAST_STATE}")
                 if xres:
                     print(f"MATCH! xres[0]='{xres[0]}',xres[1]='{xres[1]}',xres[2]='{xres[2]}',xres[3]='{xres[3]}',xres[4]='{xres[4]}'")
-                    if xres[3] in SUPPORTED_COLORS:
-                        switchState(xres[3])
-                        if STATE == 'disco':
+                    command = xres[3].lower()
+                    if command in SUPPORTED_COLORS:
+                        switchState(command)
+                        if STATE in ['disco']:
                             initXmasTree(darkMode=False)
                         break
-                    elif xres[3] in ['speak','talk','talked']:
+                    elif command in ['speak','talk','talked']:
+                        global AUDIO
                         AUDIO = 'speech.mp3'
                         switchState('speak')
                         break
-                    elif xres[3] in ['sing','saying']:
+                    elif command in ['sing','saying']:
                         AUDIO = '08-I-Wish-it-Could-be-Christmas-Everyday.mp3'
                         switchState('speak')
                         break
-                    elif xres[3] == 'generate':
+                    elif command == 'generate':
                         TEXT = xres[4].replace('.','')
                         if len(TEXT.strip()) >= 10:
                             #TEXT = "You didn't give me anything to generate"
                             switchState('generate')
                             break
                     else:
-                        print(f"Cannot handle '{xres[3]}'")
+                        print(f"Cannot handle '{command}'")
         #print("TranscribeEventHandler: EXIT")
 
 async def micStream():
@@ -148,7 +150,7 @@ def initXmasTree(darkMode):
         # Colour top LED white
         TREE[STAR].color = Color('black')
     else:
-        assert(STATE == 'disco')
+        assert(STATE in ['disco'])
         # Initialise the LEDs to starting colours
         colors = [Color('red'),Color('green'),Color('blue')]
         for i, leds in enumerate(TREE_LED_SET):
