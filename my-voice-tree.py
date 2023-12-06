@@ -36,11 +36,16 @@
 import re
 import os
 import sys
+import vlc
+import time
 import boto3
 import awscrt
 import asyncio
 import threading
 import sounddevice
+from boto3 import Session
+from botocore.exceptions import BotoCoreError, ClientError
+from contextlib import closing
 from asyncio.subprocess import PIPE
 from amazon_transcribe.client import TranscribeStreamingClient
 from amazon_transcribe.handlers import TranscriptResultStreamHandler
@@ -50,7 +55,7 @@ from colorzero import Color, Hue
 from time import sleep
 from random import random
 
-# Create an instance of an RGBXmasTree    
+# Create an instance of an RGBXmasTree
 TREE = RGBXmasTree(brightness=0.3)
 # LED number for star at the top of the tree
 STAR = 3
@@ -59,54 +64,8 @@ LAST_STATE = 'disco'
 STATE = 'disco'
 TEXT = 'Hello everyone this is your Christmas Tree talking'
 AUDIO = ''
-SUPPORTED_COLORS = ['red','green','blue','yellow','orange','purple','white','pink','black','brown','disco','phase']
-
-class TranscribeEventHandler(TranscriptResultStreamHandler):
-    async def handle_transcript_event(self, transcript_event: TranscriptEvent):
-        #print("TranscribeEventHandler: ENTER")
-        global STATE, LAST_STATE, TEXT, AUDIO
-        # Handle text transcriptions
-        xmasTree = re.compile(r'(christmas tree)(\.|\,|s)?\s+(\w+)(.*)')
-        results = transcript_event.transcript.results
-        for result in results:
-            for i,alt in enumerate(result.alternatives):
-                text = alt.transcript.lower()
-                print(f"{i}:'{alt.transcript}' ({text})")
-                xres = re.match(xmasTree,text)
-                def switchState(new_state):
-                    global STATE, LAST_STATE
-                    if STATE == new_state:
-                        print(f"We are already in STATE {STATE} - skipping")
-                    else:
-                        LAST_STATE = STATE
-                        STATE = new_state
-                        print(f"STATE CHANGE: '{new_state}' LAST_STATE={LAST_STATE}")
-                if xres:
-                    print(f"MATCH! xres[0]='{xres[0]}',xres[1]='{xres[1]}',xres[2]='{xres[2]}',xres[3]='{xres[3]}',xres[4]='{xres[4]}'")
-                    command = xres[3].lower()
-                    if command in SUPPORTED_COLORS:
-                        switchState(command)
-                        if STATE in ['disco']:
-                            initXmasTree(darkMode=False)
-                        break
-                    elif command in ['speak','talk','talked']:
-                        global AUDIO
-                        AUDIO = 'speech.mp3'
-                        switchState('speak')
-                        break
-                    elif command in ['sing','saying']:
-                        AUDIO = '08-I-Wish-it-Could-be-Christmas-Everyday.mp3'
-                        switchState('speak')
-                        break
-                    elif command == 'generate':
-                        TEXT = xres[4].replace('.','')
-                        if len(TEXT.strip()) >= 10:
-                            #TEXT = "You didn't give me anything to generate"
-                            switchState('generate')
-                            break
-                    else:
-                        print(f"Cannot handle '{command}'")
-        #print("TranscribeEventHandler: EXIT")
+SUPPORTED_COLORS = ['red','green','blue','yellow','orange','purple',
+                    'white','pink','black','brown','disco','phase']
 
 async def micStream():
     # Wraps raw input stream for mic forwarding blocks to asyncio.Queue
@@ -138,6 +97,53 @@ async def writeChunks(stream):
         await stream.input_stream.send_audio_event(audio_chunk=chunk)
     await stream.input_stream.end_stream()
     print("writeChunks: EXIT")
+
+class TranscribeEventHandler(TranscriptResultStreamHandler):
+    async def handle_transcript_event(self, transcript_event: TranscriptEvent):
+        #print("TranscribeEventHandler: ENTER")
+        # Handle text transcriptions
+        xmasTree = re.compile(r'(christmas tree)(\.|\,|s)?\s+(\w+)(.*)')
+        results = transcript_event.transcript.results
+        for result in results:
+            for i,alt in enumerate(result.alternatives):
+                global STATE, LAST_STATE, TEXT, AUDIO
+                text = alt.transcript.lower()
+                print(f"{i}:'{alt.transcript}' ({text})")
+                xres = re.match(xmasTree,text)
+                def switchState(new_state):
+                    global STATE, LAST_STATE
+                    if STATE == new_state:
+                        print(f"We are already in STATE {STATE} - skipping")
+                    else:
+                        LAST_STATE = STATE
+                        STATE = new_state
+                        print(f"STATE CHANGE: '{new_state}' LAST_STATE={LAST_STATE}")
+                if xres:
+                    print(f"MATCH! xres[0]='{xres[0]}',xres[1]='{xres[1]}',\
+                            xres[2]='{xres[2]}',xres[3]='{xres[3]}',xres[4]='{xres[4]}'")
+                    command = xres[3].lower()
+                    if command in SUPPORTED_COLORS:
+                        switchState(command)
+                        if STATE in ['disco']:
+                            initXmasTree(darkMode=False)
+                        break
+                    elif command in ['speak','talk','talked']:
+                        AUDIO = 'speech.mp3'
+                        switchState('speak')
+                        break
+                    elif command in ['sing','saying','black mirror']:
+                        AUDIO = '08-I-Wish-it-Could-be-Christmas-Everyday.mp3'
+                        switchState('speak')
+                        break
+                    elif command == 'generate':
+                        TEXT = xres[4].replace('.','')
+                        if len(TEXT.strip()) >= 10:
+                            #TEXT = "You didn't give me anything to generate"
+                            switchState('generate')
+                            break
+                    else:
+                        print(f"Cannot handle '{command}'")
+        #print("TranscribeEventHandler: EXIT")
 
 def initXmasTree(darkMode):
     print(f"initXmasTree(darkMode={darkMode})")
@@ -191,21 +197,15 @@ async def lightUpXmasTree():
     print("lightUpXmasTree: EXIT")
     raise KeyboardInterrupt
 
-def playSpeech(speech,length):
-    import vlc
-    import time
-    print(f"playSpeech({speech})")
-    player = vlc.MediaPlayer(speech)
+def playMp3(file,length):
+    print(f"playMp3({file})")
+    player = vlc.MediaPlayer(file)
     player.play()
     time.sleep(length)
     player.stop()
 
 def generateMp3WithPolly(text, file):
     """ From AWS Getting Started Example """
-    from boto3 import Session
-    from botocore.exceptions import BotoCoreError, ClientError
-    from contextlib import closing
-
     print(f"Generating polly file {file} from: '{text}'")
     polly_client = boto3.Session(region_name='us-west-2').client('polly')
     response = polly_client.synthesize_speech(VoiceId='Joanna',
@@ -251,7 +251,7 @@ async def waitForPolly():
                 length = 10
             print(f"Using vlc to play {speechFile} - non-blocking")
             # Switched to using threads to avoid blocking
-            x2 = threading.Thread(target=playSpeech, args=(speechFile,length), daemon=False)
+            x2 = threading.Thread(target=playMp3, args=(speechFile,length), daemon=False)
             x2.start()
             #x2.join() # uncomment this to block on completion
             print(f"dropping out after starting vlc thread. STATE={STATE}, LAST_STATE={LAST_STATE}")
@@ -269,7 +269,7 @@ async def waitForPolly():
             x1.join() # uncomment this to block on completion
             print(f"Using vlc to play {speechFile} - non-blocking")
             # Switched to using threads to avoid blocking
-            x2 = threading.Thread(target=playSpeech, args=(speechFile,), daemon=False)
+            x2 = threading.Thread(target=playMp3, args=(speechFile,), daemon=False)
             x2.start()
             #x2.join() # uncomment this to block on completion
             print(f"dropping out after starting vlc thread. STATE={STATE}, LAST_STATE={LAST_STATE}")
