@@ -61,6 +61,7 @@ TREE = RGBXmasTree(brightness=0.3)
 STAR = 3
 TREE_LED_SET = [list(range(25)[::3]), list(range(25)[1::3]), list(range(25)[2::3])]
 LAST_STATE = 'disco'
+PLAYING = False
 STATE = 'disco'
 TEXT = 'Hello everyone this is your Christmas Tree talking'
 AUDIO = ''
@@ -198,11 +199,17 @@ async def lightUpXmasTree():
     raise KeyboardInterrupt
 
 def playMp3(file,length):
+    global PLAYING
+    if PLAYING:
+        print(f"Already playing song")
+        return
     print(f"playMp3({file})")
+    PLAYING = True
     player = vlc.MediaPlayer(file)
     player.play()
     time.sleep(length)
     player.stop()
+    PLAYING = False
 
 def generateMp3WithPolly(text, file):
     """ From AWS Getting Started Example """
