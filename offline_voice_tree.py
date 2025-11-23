@@ -43,7 +43,28 @@ from pathlib import Path
 from typing import Optional  # for type hints compatible with Python < 3.10
 
 import sounddevice as sd  # Used to capture audio from the microphone
-sd.default.device = (2, None)
+
+# Query all available devices
+devices = sd.query_devices()
+
+# Find the index of the first input device whose name includes "ReSpeaker"
+respeaker_index = None
+for idx, dev in enumerate(devices):
+    # We want devices that have at least one input channel
+    if dev['max_input_channels'] > 0 and 'respeaker' in dev['name'].lower():
+        respeaker_index = idx
+        break
+
+# Fall back to the system default input device if none found
+if respeaker_index is None:
+    print("ReSpeaker microphone not found; using default input device.")
+    sd.default.device = (None, None)
+else:
+    # Set the ReSpeaker as the default input device
+    sd.default.device = (respeaker_index, None)
+    print(f"Using ReSpeaker device #{respeaker_index}: {devices[respeaker_index]['name']}")
+
+# Set a fixed sample rate (Vosk models typically use 16 kHz)
 sd.default.samplerate = 16000
 
 from colorzero import Color, Hue
@@ -137,18 +158,72 @@ class XmasTreeController(threading.Thread):
         # Index of the star LED at the top of the tree (GPIO numbering).  The
         # star will be white when colours are displayed and off otherwise.
         self.star_index = 3
+        # Track the currently active lighting mode so that we can detect
+        # transitions (e.g. switching from a solid colour back to disco).  When
+        # the mode changes to "disco" we reinitialise the LED colours to
+        # produce a clear transition.
+        self.current_mode = state.mode
 
     def run(self):
-        # Initial configuration: set brightness and colours
-        colours = [Color('red'), Color('green'), Color('blue')]
-        for i, leds in enumerate(self.led_sets):
-            for led in leds:
-                self.tree[led].color = colours[i]
-        self.tree[self.star_index].color = Color('white')
+        # Initial configuration: set brightness and colours.  We start in
+        # whatever mode is recorded in state.mode (usually "disco").  If the
+        # initial mode is disco we seed the LEDs with red/green/blue groups.
+        if self.state.mode.lower() == "disco":
+            colours = [Color('red'), Color('green'), Color('blue')]
+            for i, leds in enumerate(self.led_sets):
+                for led in leds:
+                    self.tree[led].color = colours[i]
+            self.tree[self.star_index].color = Color('white')
+        elif self.state.mode.lower() in SUPPORTED_COLOURS:
+            for leds in self.led_sets:
+                for led in leds:
+                    self.tree[led].color = Color(self.state.mode)
+            if self.state.mode.lower() != 'black':
+                self.tree[self.star_index].color = Color('white')
+            else:
+                self.tree[self.star_index].color = Color('black')
+        elif self.state.mode.lower() == "phase":
+            # For phase we also seed red/green/blue groups so that hue cycling
+            # starts with distinct colours.
+            colours = [Color('red'), Color('green'), Color('blue')]
+            for i, leds in enumerate(self.led_sets):
+                for led in leds:
+                    self.tree[led].color = colours[i]
+            self.tree[self.star_index].color = Color('white')
 
         try:
             while True:
                 mode = self.state.mode.lower()
+                # Detect transitions between modes.  When switching into
+                # disco mode from any other mode we reset the LED groups to
+                # red/green/blue to make the change obvious.  Without this
+                # reset the hue cycling simply continues from the previous
+                # colours and may appear stuck.
+                if mode != self.current_mode:
+                    if mode == "disco":
+                        colours = [Color('red'), Color('green'), Color('blue')]
+                        for i, leds in enumerate(self.led_sets):
+                            for led in leds:
+                                self.tree[led].color = colours[i]
+                        self.tree[self.star_index].color = Color('white')
+                    elif mode in SUPPORTED_COLOURS:
+                        for leds in self.led_sets:
+                            for led in leds:
+                                self.tree[led].color = Color(mode)
+                        if mode != 'black':
+                            self.tree[self.star_index].color = Color('white')
+                        else:
+                            self.tree[self.star_index].color = Color('black')
+                    elif mode == "phase":
+                        colours = [Color('red'), Color('green'), Color('blue')]
+                        for i, leds in enumerate(self.led_sets):
+                            for led in leds:
+                                self.tree[led].color = colours[i]
+                        self.tree[self.star_index].color = Color('white')
+                    elif mode == "idle":
+                        # idle handled below; LEDs will be turned off
+                        pass
+                    self.current_mode = mode
                 if mode == "disco":
                     # Cycle colours randomly across LED sets, similar to my‑tree.py
                     for leds in self.led_sets:
