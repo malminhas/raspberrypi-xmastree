@@ -49,10 +49,15 @@ devices = sd.query_devices()
 
 # Find the index of the first input device whose name includes "ReSpeaker"
 respeaker_index = None
+respeaker_alsa_card = None
 for idx, dev in enumerate(devices):
     # We want devices that have at least one input channel
     if dev['max_input_channels'] > 0 and 'respeaker' in dev['name'].lower():
         respeaker_index = idx
+        # Extract ALSA card number from device name (format: hw:X,0)
+        match = re.search(r'hw:(\d+),0', dev['name'])
+        if match:
+            respeaker_alsa_card = match.group(1)
         break
 
 # Fall back to the system default input device if none found
@@ -287,24 +292,59 @@ class AudioController(threading.Thread):
         self.engine.setProperty('volume', 1.0)
 
     def play_mp3(self, path: str, duration: Optional[float] = None) -> None:
-        """Play an MP3 file using VLC.  Duration can limit playback time."""
+        """Play an MP3 file using VLC on the ReSpeaker 4?Mic board.  
+        An optional ``duration`` limits playback time.
+
+        This implementation uses ALSA's ``plughw`` device rather than the raw
+        ``hw`` device.  The ``hw`` plugin presents the hardware without any
+        conversions, so if the audio file's sample rate, bit depth or channel
+        count is not supported by the ReSpeaker's DAC, VLC will fail with
+        messages such as ``no supported sample format`` and ``failed to create
+        audio output``.  In contrast, the ``plughw`` wrapper employs the ALSA
+        ``plug`` plugin, which automatically performs channel duplication,
+        sample?value conversion and resampling when necessary?208589852202690?L126-L134?.
+
+        We also pass ``--intf=dummy`` to suppress VLC's graphical interface and
+        set the volume to a moderate level (0?100) using
+        :py:meth:`vlc.MediaPlayer.audio_set_volume`?862939095569161?L1642-L1649?.
+        Finally, the player and instance are released to ensure the audio stops
+        and resources are freed when playback ends.
+        """
         try:
             if not os.path.exists(path):
                 print(f"Audio file '{path}' not found; skipping playback")
                 return
-            player = vlc.MediaPlayer(path)
+
+            # Create a VLC instance and media player with ALSA output directed to ReSpeaker
+            # Use the ALSA card number extracted from the device detection
+            alsa_device = f'plughw:{respeaker_alsa_card},0' if respeaker_alsa_card else 'plughw:2,0'
+            instance = vlc.Instance('--aout=alsa', f'--alsa-audio-device={alsa_device}', '--intf=dummy')
+            media = instance.media_new(path)
+            player = instance.media_player_new()
+            player.set_media(media)
+
+            # Reduce volume to 50%.  Volume is 0?100 [oai_citation:1?olivieraubert.net](https://www.olivieraubert.net/vlc/python-ctypes/doc/vlc.MediaPlayer-class.html#:~:text=Set%20current%20software%20audio%20volume).
+            player.audio_set_volume(10)
+
             player.play()
-            # If a duration is specified, sleep until time is up then stop
-            if duration is not None:
+
+            # If a duration is specified, play for that long; otherwise wait for the media to finish.
+            if duration:
                 time.sleep(duration)
                 player.stop()
             else:
-                # Wait until playback finishes
-                while player.get_state() != vlc.State.Ended:
+                while True:
+                    state = player.get_state()
+                    if state in (vlc.State.Ended, vlc.State.Error):
+                        break
                     time.sleep(0.1)
+
+            # Release resources so playback stops when the function exits
+            player.release()
+            instance.release()
         except Exception as exc:
             print(f"Error playing MP3 '{path}': {exc}")
-
+        
     def speak_text(self, text: str):
         """Speak the supplied text using the local TTS engine."""
         try:
