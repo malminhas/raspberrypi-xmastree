@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 from typing import Optional  # for type hints compatible with Python < 3.10
 
-import sounddevice as sd  # Used to capture audio from the microphone
+import sounddevice as sd  # Used to capture audio from the microphone # type: ignore
 
 # Query all available devices
 devices = sd.query_devices()
@@ -72,15 +72,15 @@ from tree import RGBXmasTree  # Hardware driver for PiHut’s 3D Xmas tree
 
 # Import Vosk for offline speech recognition.  A small, local model (~50 MB)
 # must be downloaded separately; specify its directory via MODEL_PATH below.
-from vosk import Model, KaldiRecognizer
+from vosk import Model, KaldiRecognizer # type: ignore
 
 # Import pyttsx3 for offline text‑to‑speech.  This uses the on‑board speech
 # engine on Linux (espeak) or other operating systems.
-import pyttsx3
+import pyttsx3 # type: ignore
 
 # Optional: use VLC for MP3 playback.  Install via apt (`sudo apt install vlc`)
 # and install the python bindings (`pip install python‑vlc`) if needed.
-import vlc
+import vlc # type: ignore
 
 
 # -----------------------------------------------------------------------------
@@ -135,6 +135,8 @@ class State:
         self.audio_event = threading.Event()
         # Type of audio event: "speak", "generate", or "sing".
         self.audio_type = None
+        # Flag to signal threads to stop gracefully
+        self.stop_event = threading.Event()
 
 
 STATE = State()
@@ -192,21 +194,53 @@ class XmasTreeController(threading.Thread):
             self.tree[self.star_index].color = Color('white')
 
         try:
-            while True:
-                mode = self.state.mode.lower()
-                # Detect transitions between modes.  When switching into
-                # disco mode from any other mode we reset the LED groups to
-                # red/green/blue to make the change obvious.  Without this
-                # reset the hue cycling simply continues from the previous
-                # colours and may appear stuck.
-                if mode != self.current_mode:
+            while not self.state.stop_event.is_set():
+                try:
+                    mode = self.state.mode.lower()
+                    # Detect transitions between modes.  When switching into
+                    # disco mode from any other mode we reset the LED groups to
+                    # red/green/blue to make the change obvious.  Without this
+                    # reset the hue cycling simply continues from the previous
+                    # colours and may appear stuck.
+                    if mode != self.current_mode:
+                        if mode == "disco":
+                            colours = [Color('red'), Color('green'), Color('blue')]
+                            for i, leds in enumerate(self.led_sets):
+                                for led in leds:
+                                    self.tree[led].color = colours[i]
+                            self.tree[self.star_index].color = Color('white')
+                        elif mode in SUPPORTED_COLOURS:
+                            for leds in self.led_sets:
+                                for led in leds:
+                                    self.tree[led].color = Color(mode)
+                            if mode != 'black':
+                                self.tree[self.star_index].color = Color('white')
+                            else:
+                                self.tree[self.star_index].color = Color('black')
+                        elif mode == "phase":
+                            colours = [Color('red'), Color('green'), Color('blue')]
+                            for i, leds in enumerate(self.led_sets):
+                                for led in leds:
+                                    self.tree[led].color = colours[i]
+                            self.tree[self.star_index].color = Color('white')
+                        elif mode == "idle":
+                            # idle handled below; LEDs will be turned off
+                            pass
+                        self.current_mode = mode
                     if mode == "disco":
-                        colours = [Color('red'), Color('green'), Color('blue')]
-                        for i, leds in enumerate(self.led_sets):
+                        # Cycle colours randomly across LED sets, similar to my‑tree.py
+                        for leds in self.led_sets:
                             for led in leds:
-                                self.tree[led].color = colours[i]
+                                self.tree[led].color += Hue(deg=10)
+                        self.tree[self.star_index].color = Color('white')
+                    elif mode == "phase":
+                        # Cycle hues synchronously across all LEDs
+                        for leds in self.led_sets:
+                            for led in leds:
+                                self.tree[led].color += Hue(deg=10)
                         self.tree[self.star_index].color = Color('white')
                     elif mode in SUPPORTED_COLOURS:
+                        # Solid colour across all LEDs; except the star stays white
                         for leds in self.led_sets:
                             for led in leds:
                                 self.tree[led].color = Color(mode)
@@ -214,48 +248,25 @@ class XmasTreeController(threading.Thread):
                             self.tree[self.star_index].color = Color('white')
                         else:
                             self.tree[self.star_index].color = Color('black')
-                    elif mode == "phase":
-                        colours = [Color('red'), Color('green'), Color('blue')]
-                        for i, leds in enumerate(self.led_sets):
-                            for led in leds:
-                                self.tree[led].color = colours[i]
-                        self.tree[self.star_index].color = Color('white')
                     elif mode == "idle":
-                        # idle handled below; LEDs will be turned off
-                        pass
-                    self.current_mode = mode
-                if mode == "disco":
-                    # Cycle colours randomly across LED sets, similar to my‑tree.py
-                    for leds in self.led_sets:
-                        for led in leds:
-                            self.tree[led].color += Hue(deg=10)
-                    self.tree[self.star_index].color = Color('white')
-                elif mode == "phase":
-                    # Cycle hues synchronously across all LEDs
-                    for leds in self.led_sets:
-                        for led in leds:
-                            self.tree[led].color += Hue(deg=10)
-                    self.tree[self.star_index].color = Color('white')
-                elif mode in SUPPORTED_COLOURS:
-                    # Solid colour across all LEDs; except the star stays white
-                    for leds in self.led_sets:
-                        for led in leds:
-                            self.tree[led].color = Color(mode)
-                    if mode != 'black':
-                        self.tree[self.star_index].color = Color('white')
-                    else:
+                        # Turn off all LEDs during audio playback
+                        for leds in self.led_sets:
+                            for led in leds:
+                                self.tree[led].color = Color('black')
                         self.tree[self.star_index].color = Color('black')
-                elif mode == "idle":
-                    # Turn off all LEDs during audio playback
-                    for leds in self.led_sets:
-                        for led in leds:
-                            self.tree[led].color = Color('black')
-                    self.tree[self.star_index].color = Color('black')
+                except (AttributeError, RuntimeError) as e:
+                    # GPIO has been closed, exit gracefully
+                    if "NoneType" in str(e) or "off" in str(e).lower():
+                        break
+                    raise
                 # Sleep briefly to yield control to other threads
                 time.sleep(0.05)
         finally:
             # Ensure the tree is turned off cleanly when the thread exits
-            self.tree.close()
+            try:
+                self.tree.close()
+            except:
+                pass  # Tree may already be closed
 
 
 # -----------------------------------------------------------------------------
@@ -304,30 +315,31 @@ class AudioController(threading.Thread):
             print(f"Error during TTS: {exc}")
 
     def run(self):
-        while True:
-            # Wait for a signal from the voice recognition thread
-            self.state.audio_event.wait()
-            # Enter idle lighting mode during audio playback
-            self.state.last_mode = self.state.mode
-            self.state.mode = "idle"
-            try:
-                if self.state.audio_type == "speak":
-                    # Play the bundled speech MP3
-                    self.play_mp3(SPEECH_MP3_PATH, DEFAULT_SPEECH_DURATION)
-                elif self.state.audio_type == "sing":
-                    # Play the configured song if present
-                    self.play_mp3(SING_MP3_PATH)
-                elif self.state.audio_type == "generate":
-                    # Use TTS to speak arbitrary text
-                    self.speak_text(self.state.text_to_speak)
-                else:
-                    print(f"Unknown audio type: {self.state.audio_type}")
-            finally:
-                # Restore previous lighting mode and clear the event
-                self.state.mode = self.state.last_mode
-                self.state.audio_type = None
-                self.state.text_to_speak = ""
-                self.state.audio_event.clear()
+        while not self.state.stop_event.is_set():
+            # Wait for a signal from the voice recognition thread (with timeout to check stop_event)
+            if self.state.audio_event.wait(timeout=0.5):
+                # Enter idle lighting mode during audio playback
+                self.state.last_mode = self.state.mode
+                self.state.mode = "idle"
+                try:
+                    if self.state.audio_type == "speak":
+                        # Play the bundled speech MP3
+                        self.play_mp3(SPEECH_MP3_PATH, DEFAULT_SPEECH_DURATION)
+                    elif self.state.audio_type == "sing":
+                        # Play the configured song if present
+                        self.play_mp3(SING_MP3_PATH)
+                    elif self.state.audio_type == "generate":
+                        # Use TTS to speak arbitrary text
+                        self.speak_text(self.state.text_to_speak)
+                    else:
+                        print(f"Unknown audio type: {self.state.audio_type}")
+                finally:
+                    # Restore previous lighting mode and clear the event
+                    if not self.state.stop_event.is_set():
+                        self.state.mode = self.state.last_mode
+                    self.state.audio_type = None
+                    self.state.text_to_speak = ""
+                    self.state.audio_event.clear()
 
 
 # -----------------------------------------------------------------------------
@@ -382,17 +394,22 @@ class VoiceRecognizer(threading.Thread):
                                dtype='int16',
                                channels=1,
                                callback=self.audio_callback):
-            while True:
-                data = self.q.get()
-                if self.recognizer.AcceptWaveform(data):
-                    # Parse the full result JSON
-                    result = json.loads(self.recognizer.Result())
-                    text = result.get('text', '').strip().lower()
-                    if text:
-                        self.process_command(text)
-                else:
-                    # Partial results are not used here, but could be printed
-                    pass
+            while not self.state.stop_event.is_set():
+                try:
+                    # Use timeout to allow checking stop_event periodically
+                    data = self.q.get(timeout=0.1)
+                    if self.recognizer.AcceptWaveform(data):
+                        # Parse the full result JSON
+                        result = json.loads(self.recognizer.Result())
+                        text = result.get('text', '').strip().lower()
+                        if text:
+                            self.process_command(text)
+                    else:
+                        # Partial results are not used here, but could be printed
+                        pass
+                except queue.Empty:
+                    # Timeout allows checking stop_event
+                    continue
 
     def process_command(self, utterance: str):
         """Interpret a recognised utterance and update the shared state."""
@@ -447,7 +464,7 @@ def main() -> int:
     """Entry point for the offline voice‑controlled Christmas tree."""
     print("Starting offline voice‑controlled Christmas tree…")
     # Instantiate the hardware tree.  Set brightness to a reasonable default.
-    tree = RGBXmasTree(brightness=0.3)
+    tree = RGBXmasTree(brightness=0.1)
     # Create and start the worker threads
     led_thread = XmasTreeController(tree, STATE)
     audio_thread = AudioController(STATE)
@@ -460,10 +477,20 @@ def main() -> int:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("Stopping…")
+        print("\nStopping…")
+        # Signal all threads to stop
+        STATE.stop_event.set()
+        # Wait for threads to finish (with timeout)
+        led_thread.join(timeout=1.0)
+        audio_thread.join(timeout=1.0)
+        voice_thread.join(timeout=1.0)
         return 0
     finally:
-        tree.close()
+        # Close the tree after threads have stopped
+        try:
+            tree.close()
+        except:
+            pass  # Tree may already be closed
 
 
 if __name__ == '__main__':
