@@ -324,7 +324,7 @@ class AudioController(threading.Thread):
             player.set_media(media)
 
             # Reduce volume to 50%.  Volume is 0?100 [oai_citation:1?olivieraubert.net](https://www.olivieraubert.net/vlc/python-ctypes/doc/vlc.MediaPlayer-class.html#:~:text=Set%20current%20software%20audio%20volume).
-            player.audio_set_volume(10)
+            player.audio_set_volume(50)
 
             player.play()
 
