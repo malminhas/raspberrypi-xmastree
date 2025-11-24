@@ -358,7 +358,7 @@ The script uses VLC for MP3 playback with ALSA output. It automatically:
 * Detects the ReSpeaker device and extracts the ALSA card number from the device name
 * Configures VLC to use `plughw:X,0` (where X is the detected card number) for audio output
 * Uses the `plughw` plugin which automatically handles sample rate conversion and channel mapping
-* Sets playback volume to 10% (adjustable in the `play_mp3` method)
+* Sets playback volume to 50% (adjustable in the `play_mp3` method)
 
 During audio playback (speak, generate, or sing commands), the LEDs are temporarily turned off and restored to the previous mode when playback completes.
 
