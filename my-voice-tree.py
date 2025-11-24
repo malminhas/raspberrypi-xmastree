@@ -4,6 +4,7 @@
 # my-voice-tree.py
 # ----------------
 # (c) 2021 Mal Minhas, <mal@malm.co.uk>
+# (c) 2025 Mal Minhas, <mal@malm.co.uk>
 #
 # my-voice-tree.py
 # ----------------
@@ -36,20 +37,21 @@
 import re
 import os
 import sys
-import vlc
+import vlc # type: ignore
 import time
-import boto3
-import awscrt
+import boto3 # AWS Transcribe and Polly # type: ignore
+import awscrt # type: ignore
 import asyncio
 import threading
-import sounddevice
-from boto3 import Session
-from botocore.exceptions import BotoCoreError, ClientError
+import sounddevice # type: ignore
+import numpy as np
+from boto3 import Session # type: ignore
+from botocore.exceptions import BotoCoreError, ClientError # type: ignore
 from contextlib import closing
 from asyncio.subprocess import PIPE
-from amazon_transcribe.client import TranscribeStreamingClient
-from amazon_transcribe.handlers import TranscriptResultStreamHandler
-from amazon_transcribe.model import TranscriptEvent
+from amazon_transcribe.client import TranscribeStreamingClient # type: ignore
+from amazon_transcribe.handlers import TranscriptResultStreamHandler # type: ignore
+from amazon_transcribe.model import TranscriptEvent # type: ignore
 from tree import RGBXmasTree
 from colorzero import Color, Hue
 from time import sleep
@@ -291,7 +293,7 @@ def synthesizeText(text):
                                               OutputFormat='mp3', 
                                               Text = 'This is a sample text to be synthesized.',
                                               Engine = 'neural')
-    with open('speech.mp3', 'wb'):
+    with open('speech.mp3', 'wb') as file:
         file.write(response['AudioStream'].read())
 
             
