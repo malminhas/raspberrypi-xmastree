@@ -295,7 +295,7 @@ graph TB
 (xmastree) $ python offline_voice_tree.py
 ```
 
-The script will automatically detect and use the ReSpeaker microphone if available, or fall back to the default input device.
+The script will automatically detect and use the ReSpeaker microphone if available, or fall back to the default input device. It also automatically extracts the ALSA card number from the device name and uses it for audio playback, ensuring MP3 files play through the ReSpeaker's audio output.
 
 ### System Architecture
 
@@ -339,7 +339,7 @@ The script uses three cooperative threads:
 
 1. **VoiceRecognizer**: Continuously listens to the microphone, processes audio through Vosk, and updates shared state when commands are recognized.
 2. **XmasTreeController**: Monitors shared state and updates LED colors/modes accordingly. Handles disco, phase, and solid color modes.
-3. **AudioController**: Responds to audio events (speak, generate, sing) and manages TTS and MP3 playback.
+3. **AudioController**: Responds to audio events (speak, generate, sing) and manages TTS and MP3 playback. During audio playback, LEDs are turned off (idle mode) and restored to the previous mode when playback completes.
 
 All threads share a `State` object for coordination and use `threading.Event` for signaling.
 
@@ -350,6 +350,17 @@ All threads share a `State` object for coordination and use `threading.Event` fo
 * **Audio**: `christmas tree speak` (plays bundled MP3 from `speech.mp3`)
 * **TTS**: `christmas tree generate <your message here>` (generates speech locally)
 * **Music**: `christmas tree sing` (plays configured song from `08-I-Wish-it-Could-be-Christmas-Everyday.mp3`)
+
+### Audio Playback
+
+The script uses VLC for MP3 playback with ALSA output. It automatically:
+
+* Detects the ReSpeaker device and extracts the ALSA card number from the device name
+* Configures VLC to use `plughw:X,0` (where X is the detected card number) for audio output
+* Uses the `plughw` plugin which automatically handles sample rate conversion and channel mapping
+* Sets playback volume to 10% (adjustable in the `play_mp3` method)
+
+During audio playback (speak, generate, or sing commands), the LEDs are temporarily turned off and restored to the previous mode when playback completes.
 
 ### Configuration
 
