@@ -6,9 +6,9 @@ This repository contains experiments with PiHut's [3D Xmas Tree](https://thepihu
 
 * **[`my-tree.py`](my-tree.py)**: A simple disco tree that gently pulses through different hues in a slow, colorful pattern. The LEDs [cycle through colors](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized-large.gif) in a variable pattern that can't be changed.
 
-* **[`my-voice-tree.py`](my-voice-tree.py)**: A cloud-based voice-controlled tree that uses AWS Transcribe and Polly for speech recognition and synthesis. You can change the lights by speaking commands like "christmas tree blue|red|green|white", "christmas tree phase" to cycle through LED hues, or "christmas tree disco" to revert to the disco pattern. The tree can also speak using "christmas tree speak" or generate custom speech with "christmas tree generate this is my message". See it in action [here](https://youtu.be/YopBvuAIyBU).
+* **[`my-voice-tree.py`](my-voice-tree.py)**: A cloud-based voice-controlled tree that uses AWS Transcribe and Polly for speech recognition and synthesis. You can change the lights by speaking commands like "christmas tree blue|red|green|white", "christmas tree phase" to cycle through LED hues, or "christmas tree disco" to revert to the disco pattern. The tree can also speak using "christmas tree speak" or generate custom speech with "christmas tree generate this is my message". See it in action [here](https://youtu.be/YopBvuAIyBU).  Note that running this script over an extended period can be expensive.
 
-* **[`offline_voice_tree.py`](offline_voice_tree.py)**: A modern, **offline alternative** that runs entirely on the Raspberry Pi without any internet connectivity or AWS services. Uses Vosk for offline speech recognition and pyttsx3 for local text-to-speech, so your festive light show continues to work even when your network is down. Perfect for standalone installations or when you want to avoid cloud dependencies.
+* **[`offline_voice_tree.py`](offline_voice_tree.py)**: A modern, **offline alternative** that runs entirely on the Raspberry Pi without any internet connectivity or AWS services. Uses [Vosk](https://alphacephei.com/vosk/models) for offline speech recognition and `pyttsx3` for local text-to-speech, so your festive light show works without requiring a network connection or incurring AWS charges. Perfect for standalone installations or when you want to avoid cloud dependencies.
 
 `my-tree.py`               |  `my-voice-tree.py`
 :-------------------------:|:-------------------------:
@@ -19,7 +19,7 @@ This repository contains experiments with PiHut's [3D Xmas Tree](https://thepihu
 Here's the full set of kit you need to recreate both the disco and voice-controlled trees:
 
 * **Raspberry Pi 4 or 5**: Raspberry Pi 4 available from PiHut [here](https://thepihut.com/products/raspberry-pi-4-model-b) for £33.60.
-* **RPi case**: The one used here is the multilayer acrylic case available [on Amazon](https://www.amazon.co.uk/GeeekPi-Acrylic-Raspberry-Model-Heatsinks/dp/B07TVLTMX3) for £11. To fit the tree you have to remove the fan and some of the top layers.
+* **RPi case**: The one used with the Raspberry Pi  is the multilayer acrylic case available [on Amazon](https://www.amazon.co.uk/GeeekPi-Acrylic-Raspberry-Model-Heatsinks/dp/B07TVLTMX3) for £11. To fit the tree you have to remove the fan and some of the top layers.
 * **RPi XmasTree3D**: Available pre-soldered from PiHut [here](https://thepihut.com/products/3d-xmas-tree-for-raspberry-pi) for £15.
 * **ReSpeaker USB Mic Array**: Available from Pimoroni [here](https://shop.pimoroni.com/products/respeaker-usb-mic-array) for £63.
 * **3.5mm jack connected speaker**: A cheap non-powered one is fine as we will plug it into the ReSpeaker unit for amplification. You can pick [one of these](https://www.amazon.co.uk/TRIXES-Portable-Travel-Speaker-iPhone/dp/B003TKTUUY) up on Amazon for under £10.
@@ -30,12 +30,11 @@ Total price for the above kit is £153. You will also need a monitor, keyboard, 
 
 For all scripts, you need to first follow the PiHut instructions for how to construct the 3D Xmas tree. It's relatively straightforward for the pre-soldered tree which is comprised of three separate sections that clip together.
 
-Once you have plugged your tree into GPIO on a Raspberry Pi 4 or 5, download the repository:
+Once you have plugged your tree into GPIO on a Raspberry Pi 4 or 5, clone the repository:
 
 ```bash
 $ git clone git@github.com:malminhas/raspberrypi-xmastree.git
 $ cd raspberrypi-xmastree
-$ wget https://bit.ly/2Lr9CT3 -O tree.py
 ```
 
 For voice-controlled trees (`my-voice-tree.py` or `offline_voice_tree.py`), you'll need to:
@@ -51,7 +50,7 @@ For voice-controlled trees (`my-voice-tree.py` or `offline_voice_tree.py`), you'
 
 #### GPIO Support (Raspberry Pi 4/5)
 
-On Raspberry Pi 5, GPIO system support is already in place. Install the required system packages:
+On Raspberry Pi 5, GPIO system support is already in place. Install the required system packages if needed on Raspberry Pi 4:
 
 ```bash
 $ sudo apt install python3-gpiozero python3-lgpio
