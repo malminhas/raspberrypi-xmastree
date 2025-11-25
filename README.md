@@ -6,7 +6,7 @@ This repository contains experiments with PiHut's [3D Xmas Tree](https://thepihu
 
 * **[`my-tree.py`](my-tree.py)**: A simple disco tree that gently pulses through different hues in a slow, colorful pattern. The LEDs [cycle through colors](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized-large.gif) in a variable pattern that can't be changed.
 
-* **[`my-voice-tree.py`](my-voice-tree.py)**: A cloud-based voice-controlled tree that uses AWS Transcribe and Polly for speech recognition and synthesis. You can change the lights by speaking commands like "christmas tree blue|red|green|white", "christmas tree phase" to cycle through LED hues, or "christmas tree disco" to revert to the disco pattern. The tree can also speak using "christmas tree speak" or generate custom speech with "christmas tree generate this is my message". See it in action [here](https://youtu.be/YopBvuAIyBU).  Note that running this script over an extended period can be expensive.
+* **[`my-voice-tree.py`](my-voice-tree.py)**: A cloud-based voice-controlled tree that uses AWS Transcribe and Polly for speech recognition and synthesis. You can change the lights by speaking commands like "christmas tree blue|red|green|white", "christmas tree phase" to cycle through LED hues, or "christmas tree disco" to revert to the disco pattern. The tree can also speak using "christmas tree speak" or "christmas tree generate" (both play the `speech.mp3` file). See it in action [here](https://youtu.be/YopBvuAIyBU).  Note that running this script over an extended period can be expensive.
 
 * **[`offline_voice_tree.py`](offline_voice_tree.py)**: A modern, **offline alternative** that runs entirely on the Raspberry Pi without any internet connectivity or AWS services. Uses [Vosk](https://alphacephei.com/vosk/models) for offline speech recognition and `pyttsx3` for local text-to-speech, so your festive light show works without requiring a network connection or incurring AWS charges. Perfect for standalone installations or when you want to avoid cloud dependencies.
 
@@ -218,9 +218,7 @@ graph TB
     G --> K[Audio Controller]
     K --> L{Audio Type}
     L -->|speak| M[VLC MP3 Player]
-    L -->|generate| N[AWS Polly]
-    N --> O[Text to Speech]
-    O --> M
+    L -->|generate| M
     
     style A fill:#e1f5ff
     style D fill:#fff4e1
@@ -233,8 +231,8 @@ graph TB
 
 * **Colors**: `christmas tree red|green|blue|yellow|orange|purple|white|pink|brown|black`
 * **Modes**: `christmas tree disco|phase`
-* **Audio**: `christmas tree speak` (plays bundled MP3)
-* **TTS**: `christmas tree generate <your message here>` (generates speech via AWS Polly)
+* **Audio**: `christmas tree speak` (plays `speech.mp3` file)
+* **Audio**: `christmas tree generate` (plays `speech.mp3` file)
 * **Music**: `christmas tree sing` (plays configured song)
 
 ---
@@ -321,10 +319,8 @@ graph TB
     E --> K
     K --> O{Audio Event}
     O -->|speak| P[VLC MP3 Player]
-    O -->|generate| Q[pyttsx3 TTS]
+    O -->|generate| P
     O -->|sing| P
-    Q --> R[espeak-ng]
-    R --> S[Audio Output]
     
     style A fill:#e1f5ff
     style H fill:#fff4e1
@@ -347,8 +343,8 @@ All threads share a `State` object for coordination and use `threading.Event` fo
 
 * **Colors**: `christmas tree red|green|blue|yellow|orange|purple|white|pink|brown|black`
 * **Modes**: `christmas tree disco|phase`
-* **Audio**: `christmas tree speak` (plays bundled MP3 from `speech.mp3`)
-* **TTS**: `christmas tree generate <your message here>` (generates speech locally)
+* **Audio**: `christmas tree speak` (plays `speech.mp3` file)
+* **Audio**: `christmas tree generate` (plays `speech.mp3` file)
 * **Music**: `christmas tree sing` (plays configured song from `08-I-Wish-it-Could-be-Christmas-Everyday.mp3`)
 
 ### Audio Playback
