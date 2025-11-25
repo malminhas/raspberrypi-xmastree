@@ -115,9 +115,12 @@ DEFAULT_SPEECH_DURATION = 10
 # file here to customise the message spoken when saying “christmas tree speak”.
 SPEECH_MP3_PATH = str(Path(__file__).parent / "speech.mp3")
 
-# Path to the song used by the “sing” command.  If left unset or the file
+# Path to the song used by the "sing" command.  If left unset or the file
 # does not exist, the command will be ignored.
 SING_MP3_PATH = str(Path(__file__).parent / "08-I-Wish-it-Could-be-Christmas-Everyday.mp3")
+
+# Default text to speak when "generate" command is used (since grammar prevents capturing text)
+DEFAULT_GENERATE_TEXT = "Hello everyone, this is your Christmas tree speaking"
 
 # -----------------------------------------------------------------------------
 # Global state shared between threads
@@ -353,6 +356,30 @@ class AudioController(threading.Thread):
             self.engine.runAndWait()
         except Exception as exc:
             print(f"Error during TTS: {exc}")
+    
+    def generate_and_play_speech(self, text: str):
+        """Generate speech from text using pyttsx3, save to WAV file, and play via VLC."""
+        import tempfile
+        try:
+            print(f"Generating speech for: '{text}'")
+            # Create a temporary WAV file
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+                temp_wav_path = tmp_file.name
+            
+            # Generate speech and save to WAV file
+            self.engine.save_to_file(text, temp_wav_path)
+            self.engine.runAndWait()
+            
+            # Play the generated WAV file using the existing play_mp3 method (VLC handles WAV too)
+            self.play_mp3(temp_wav_path)
+            
+            # Clean up temporary file
+            try:
+                os.unlink(temp_wav_path)
+            except Exception:
+                pass
+        except Exception as exc:
+            print(f"Error generating/playing speech: {exc}")
 
     def run(self):
         while not self.state.stop_event.is_set():
@@ -369,8 +396,8 @@ class AudioController(threading.Thread):
                         # Play the configured song if present
                         self.play_mp3(SING_MP3_PATH)
                     elif self.state.audio_type == "generate":
-                        # Use TTS to speak arbitrary text
-                        self.speak_text(self.state.text_to_speak)
+                        # Generate speech using pyttsx3, save to WAV, and play via VLC
+                        self.generate_and_play_speech(self.state.text_to_speak)
                     else:
                         print(f"Unknown audio type: {self.state.audio_type}")
                 finally:
@@ -482,14 +509,10 @@ class VoiceRecognizer(threading.Thread):
             self.state.audio_type = "sing"
             self.state.audio_event.set()
             return
-        # Generate: use TTS to speak the rest of the sentence
+        # Generate: use pyttsx3 to generate speech and play via VLC
         if command == "generate":
-            generated_text = rest.strip()
-            if len(generated_text) < 1:
-                print("No text provided for generate command; ignoring")
-                return
-            print(f"Preparing to generate speech for: '{generated_text}'")
-            self.state.text_to_speak = generated_text
+            print("Preparing to generate speech using pyttsx3")
+            self.state.text_to_speak = DEFAULT_GENERATE_TEXT
             self.state.audio_type = "generate"
             self.state.audio_event.set()
             return
