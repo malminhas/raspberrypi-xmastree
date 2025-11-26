@@ -120,7 +120,7 @@ SPEECH_MP3_PATH = str(Path(__file__).parent / "speech.mp3")
 SING_MP3_PATH = str(Path(__file__).parent / "08-I-Wish-it-Could-be-Christmas-Everyday.mp3")
 
 # Default text to speak when "generate" command is used (since grammar prevents capturing text)
-DEFAULT_GENERATE_TEXT = "Hello everyone, this is your Christmas tree speaking"
+DEFAULT_GENERATE_TEXT = "Hello everyone, this is your Christmas tree talking"
 
 # -----------------------------------------------------------------------------
 # Global state shared between threads
