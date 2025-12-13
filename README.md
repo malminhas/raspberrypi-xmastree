@@ -250,10 +250,11 @@ graph TB
 
 * **Fully offline**: No internet connection required for core functionality
 * **Vosk speech recognition**: On-device speech-to-text using local models
-* **Local TTS**: Text-to-speech using pyttsx3 (espeak-ng)
-* **AI-powered commands** (optional): Dynamic joke and flattery generation via GreenPT API
+* **Flexible TTS**: Text-to-speech using pyttsx3 (espeak-ng) or Piper TTS (high-quality neural TTS)
+* **AI-powered commands** (optional): Dynamic joke and flattery generation via GreenPT API with session-based repetition avoidance
 * **Same command set**: Compatible with `my-voice-tree.py` commands
 * **Thread-based architecture**: Separate threads for voice recognition, LED control, and audio
+* **Command-line options**: Choose TTS engine via `--tts-engine` argument
 * **Graceful shutdown**: Handles CTRL-C cleanly without crashes
 
 ### Installation
@@ -294,16 +295,38 @@ graph TB
    (xmastree) $ pip install pyttsx3
    $ sudo apt install espeak-ng
    ```
+   
+   **Optional - Piper TTS** (for higher quality speech):
+   See [INSTALL_PIPER.md](INSTALL_PIPER.md) for detailed installation instructions.
+   Piper TTS provides neural TTS with much better quality than espeak-ng.
 
 5. **HTTP Client** (for joke and flatter commands):
    ```bash
-   (xmastree) $ pip install requests
+   (xmastree) $ pip install requests python-dotenv
    ```
 
 #### Running the Script
 
+**Basic usage** (auto-detects TTS engine):
 ```bash
 (xmastree) $ python offline_voice_tree.py
+```
+
+**With TTS engine selection**:
+```bash
+# Force Piper TTS (requires PIPER_MODEL_PATH environment variable)
+(xmastree) $ python offline_voice_tree.py --tts-engine piper
+
+# Force pyttsx3 (espeak-ng backend)
+(xmastree) $ python offline_voice_tree.py --tts-engine pyttsx3
+
+# Auto-detect (default - prefers Piper if available)
+(xmastree) $ python offline_voice_tree.py --tts-engine auto
+```
+
+**Show help**:
+```bash
+(xmastree) $ python offline_voice_tree.py --help
 ```
 
 The script will automatically detect and use the ReSpeaker microphone if available, or fall back to the default input device. It also automatically extracts the ALSA card number from the device name and uses it for audio playback, ensuring MP3 files play through the ReSpeaker's audio output.
@@ -357,11 +380,11 @@ All threads share a `State` object for coordination and use `threading.Event` fo
 * **Colors**: `christmas tree red|green|blue|yellow|orange|purple|white|pink|brown|black`
 * **Modes**: `christmas tree disco|phase`
 * **Audio**: `christmas tree speak` (plays `speech.mp3` file)
-* **Audio**: `christmas tree generate` (generates speech using pyttsx3 TTS engine)
+* **Audio**: `christmas tree generate` (generates speech using selected TTS engine)
 * **Music**: `christmas tree sing` (plays configured song from `08-I-Wish-it-Could-be-Christmas-Everyday.mp3`)
 * **AI Commands** (requires GreenPT API):
-  * `christmas tree joke` (fetches and speaks a family-friendly joke)
-  * `christmas tree flatter` (generates and speaks over-the-top praise)
+  * `christmas tree joke` (fetches and speaks a family-friendly joke, avoids repetition during session)
+  * `christmas tree flatter` (generates and speaks over-the-top praise, avoids repetition during session)
 
 ### Audio Playback
 
@@ -382,22 +405,46 @@ You can customize the following paths and settings in the script:
 * `SING_MP3_PATH`: Path to song file for "sing" command (default: `08-I-Wish-it-Could-be-Christmas-Everyday.mp3`)
 * `MODEL_PATH`: Path to Vosk model directory (default: `./model` or `VOSK_MODEL_PATH` env var)
 
+**TTS Engine Configuration**:
+
+The script supports two TTS engines:
+
+1. **pyttsx3** (default, always available):
+   - Uses espeak-ng backend
+   - Lower quality but no additional setup required
+   - Automatically selects best English voice available
+
+2. **Piper TTS** (optional, higher quality):
+   - Neural TTS with much better quality
+   - Requires installation and model download
+   - See [INSTALL_PIPER.md](INSTALL_PIPER.md) for setup instructions
+   - Set `PIPER_MODEL_PATH` environment variable to enable
+
 **GreenPT API Configuration** (optional, for joke and flatter commands):
 
-To use the AI-powered joke and flatter commands, configure the following environment variables:
+The `greenpt.py` module provides AI-powered joke and flattery generation. To use these features:
 
-```bash
-export GREENPT_API_BASE_URL="https://api.greenpt.example.com/v1"
-export GREENPT_API_KEY="your_api_key_here"
-export GREENPT_MODEL_ID="gpt-4o-mini"  # optional, defaults to gpt-4o-mini
-```
+1. Create a `local.env` file (or set environment variables):
+   ```bash
+   export GREENPT_API_BASE_URL="https://api.greenpt.ai/v1"
+   export GREENPT_API_KEY="your_api_key_here"
+   export GREENPT_MODEL_ID="gemma-3-27b-it"  # optional, defaults to gemma-3-27b-it
+   ```
 
-Then run the script:
-```bash
-(xmastree) $ python offline_voice_tree.py
-```
+2. The `greenpt.py` module automatically loads `local.env` if present.
 
-If the API key is not configured, the joke and flatter commands will print a warning and skip execution. All other commands continue to work normally
+3. Run the script:
+   ```bash
+   (xmastree) $ python offline_voice_tree.py
+   ```
+
+**Features of GreenPT integration**:
+- **Session-based repetition avoidance**: Jokes and flattery are tracked during the session to ensure variety
+- **Automatic model management**: Selected model is persisted across sessions
+- **Graceful degradation**: If API is unavailable, commands print a warning and continue operation
+- **Configurable prompts**: Randomized prompts ensure diverse content generation
+
+If the API key is not configured, the joke and flatter commands will print a warning and skip execution. All other commands continue to work normally.
 
 ---
 
@@ -469,8 +516,9 @@ The offline version is ideal for standalone installations where network connecti
 |---------|-----------------|----------------------|
 | Internet Required | ✅ Yes | ❌ No (optional for AI commands) |
 | Speech Recognition | AWS Transcribe | Vosk (local) |
-| Audio Playback | MP3 files | MP3 + pyttsx3 TTS |
-| AI-Generated Content | ❌ No | ✅ Yes (joke/flatter via GreenPT) |
+| Audio Playback | MP3 files | MP3 + pyttsx3/Piper TTS |
+| TTS Quality | N/A | pyttsx3 (basic) or Piper (high-quality neural) |
+| AI-Generated Content | ❌ No | ✅ Yes (joke/flatter via GreenPT with repetition avoidance) |
 | Setup Complexity | Higher (AWS config) | Lower (model download) |
 | Cost | Pay-per-use AWS | Free (optional GreenPT API) |
 | Latency | Network dependent | Local (faster) |

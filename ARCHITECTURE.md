@@ -88,11 +88,13 @@ C4Container
 
         Container(ledThread, "XmasTreeController Thread", "Python + gpiozero", "Drives LED animations based on mode (disco, phase, colors)")
 
-        Container(audioThread, "AudioController Thread", "Python + pyttsx3 + VLC", "Handles TTS generation and MP3 playback")
+        Container(audioThread, "AudioController Thread", "Python + pyttsx3/Piper + VLC", "Handles TTS generation and MP3 playback")
 
         ContainerDb(sharedState, "Shared State", "Python State Object", "Synchronizes mode, audio events, and text between threads")
 
         Container(voskModel, "Vosk Speech Model", "Binary Model Files", "Offline speech recognition model (~50MB)")
+        
+        Container_Ext(greenptAPI, "GreenPT API", "HTTP REST API", "Optional LLM API for joke/flattery generation")
     }
 
     System_Ext(microphone, "ReSpeaker USB Mic", "USB audio device")
@@ -109,6 +111,8 @@ C4Container
 
     Rel(sharedState, audioThread, "Signals", "Audio events")
     Rel(audioThread, speaker, "Plays", "ALSA/VLC")
+    Rel(audioThread, greenptAPI, "Requests", "joke/flattery (optional)")
+    Rel(greenptAPI, audioThread, "Returns", "Generated content")
     Rel(speaker, user, "Audio feedback")
     Rel(leds, user, "Visual feedback")
 
@@ -125,7 +129,7 @@ C4Container
 | Main Thread | Python 3 | System initialization, thread lifecycle management, graceful shutdown |
 | VoiceRecognizer Thread | Python + Vosk + sounddevice | Audio capture, speech recognition, command parsing, state updates |
 | XmasTreeController Thread | Python + gpiozero + colorzero | LED animation control, mode transitions, color management |
-| AudioController Thread | Python + pyttsx3 + python-vlc | Text-to-speech synthesis, MP3 playback, temporary WAV generation |
+| AudioController Thread | Python + pyttsx3/Piper + python-vlc | Text-to-speech synthesis (pyttsx3 or Piper TTS), MP3 playback, temporary WAV generation, GreenPT API integration |
 | Shared State | Python State class | Thread-safe communication, mode storage, event signaling |
 | Vosk Model | Binary files | Offline speech recognition grammar and vocabulary |
 
@@ -199,20 +203,31 @@ C4Component
         Component(eventListener, "Event Listener", "threading.Event", "Waits for audio event signals")
         Component(audioRouter, "Audio Router", "Python Logic", "Routes to appropriate playback handler")
         Component(mp3Player, "MP3 Player", "python-vlc", "Plays MP3 files via VLC")
-        Component(ttsEngine, "TTS Engine", "pyttsx3", "Generates speech from text")
-        Component(wavGenerator, "WAV Generator", "tempfile + pyttsx3", "Creates temporary WAV files")
+        Component(ttsEngine, "TTS Engine", "pyttsx3/Piper", "Generates speech from text (selectable engine)")
+        Component(piperTTS, "Piper TTS", "subprocess", "High-quality neural TTS (optional)")
+        Component(pyttsx3Engine, "pyttsx3 Engine", "pyttsx3", "Fallback TTS using espeak-ng")
+        Component(wavGenerator, "WAV Generator", "tempfile + TTS", "Creates temporary WAV files")
+        Component(greenptClient, "GreenPT Client", "greenpt.py", "Fetches jokes/flattery from API")
         Component(modeManager, "Mode Manager", "Python Logic", "Switches to idle mode during playback")
     }
 
     ContainerDb(sharedState, "Shared State")
     System_Ext(speaker, "Audio Output")
 
+    System_Ext(greenptAPI, "GreenPT API")
+    
     Rel(sharedState, eventListener, "Signals", "Audio events")
     Rel(eventListener, modeManager, "Triggers", "Mode switch")
     Rel(eventListener, audioRouter, "Activates")
     Rel(audioRouter, mp3Player, "Routes", "speak/sing")
     Rel(audioRouter, wavGenerator, "Routes", "generate/joke/flatter")
+    Rel(audioRouter, greenptClient, "Routes", "joke/flatter")
+    Rel(greenptClient, greenptAPI, "HTTP POST", "API requests")
+    Rel(greenptAPI, greenptClient, "Returns", "Generated text")
+    Rel(greenptClient, wavGenerator, "Provides", "Text content")
     Rel(wavGenerator, ttsEngine, "Uses", "TTS synthesis")
+    Rel(ttsEngine, piperTTS, "Falls back to", "If Piper available")
+    Rel(ttsEngine, pyttsx3Engine, "Uses", "Default/fallback")
     Rel(mp3Player, speaker, "Outputs", "ALSA plughw")
     Rel(modeManager, sharedState, "Updates", "Mode restoration")
 ```
@@ -247,8 +262,11 @@ C4Component
 | Event Listener | audio_event | Wakeup signal | Blocks on threading.Event with 0.5s timeout |
 | Audio Router | audio_type | Handler selection | Routes based on "speak", "sing", "generate", "joke", or "flatter" |
 | MP3 Player | File path | Audio stream | VLC instance with ALSA plughw:X,0 device |
-| TTS Engine | Text string | Spoken audio | pyttsx3 with espeak-ng backend |
-| WAV Generator | Text string | Temporary file | save_to_file() + play_mp3() + cleanup |
+| TTS Engine | Text string | Spoken audio | Selects Piper TTS or pyttsx3 based on availability/preference |
+| Piper TTS | Text string | WAV file | High-quality neural TTS via subprocess |
+| pyttsx3 Engine | Text string | Spoken audio | espeak-ng backend with English voice selection |
+| GreenPT Client | Command type | Generated text | Fetches jokes/flattery with session-based repetition avoidance |
+| WAV Generator | Text string | Temporary file | TTS generation + play_mp3() + cleanup |
 | Mode Manager | Playback start/end | Mode changes | Sets idle mode, restores last_mode after playback |
 
 ---
@@ -270,6 +288,8 @@ classDiagram
         +Event audio_event
         +string audio_type
         +Event stop_event
+        +list previous_jokes
+        +list previous_flattery
         +__init__()
     }
 
@@ -297,12 +317,31 @@ classDiagram
 
     class AudioController {
         -State state
+        -string tts_preference
+        -bool use_piper
+        -string piper_executable
+        -string piper_model_path
         -Engine engine
-        +__init__(state: State)
+        +__init__(state: State, tts_preference: Optional[str])
+        +_configure_piper()
+        +_configure_pyttsx3()
+        +_select_tts_engine()
+        +_generate_speech_with_piper(text: str, output_path: str): bool
+        +_generate_speech_with_pyttsx3(text: str, output_path: str): bool
+        +_wait_for_audio_file(file_path: str, max_wait: float): bool
         +play_mp3(path: str, duration: float)
         +speak_text(text: str)
         +generate_and_play_speech(text: str)
         +run()
+    }
+    
+    class GreenPT {
+        +get_joke(previous_jokes: Optional[List[str]]): Optional[str]
+        +get_flattery(previous_flattery: Optional[List[str]]): Optional[str]
+        +infer(prompt: str, max_tokens: int, temperature: float): Optional[str]
+        +get_model(): str
+        +set_model(model_id: str): bool
+        +list_models(): Optional[List[Dict]]
     }
 
     class RGBXmasTree {
@@ -330,6 +369,7 @@ classDiagram
     State <-- VoiceRecognizer : reads/writes
     State <-- XmasTreeController : reads
     State <-- AudioController : reads/writes
+    AudioController --> GreenPT : uses
     RGBXmasTree *-- Pixel : contains 25
     XmasTreeController o-- RGBXmasTree : controls
     VoiceRecognizer : threading.Thread
@@ -352,6 +392,8 @@ class State:
         self.audio_event = threading.Event()  # Audio trigger signal
         self.audio_type = None        # "speak", "generate", "sing", "joke", or "flatter"
         self.stop_event = threading.Event()   # Graceful shutdown signal
+        self.previous_jokes = []      # Track jokes to avoid repetition
+        self.previous_flattery = []   # Track flattery to avoid repetition
 ```
 
 **Purpose**: Provides thread-safe shared state using Python's GIL. Events provide signaling mechanism without polling.
@@ -424,10 +466,11 @@ This ensures clear visual feedback when mode changes.
 
 **Key Methods**:
 
-1. **`__init__(state: State)`** (lines 287-295)
-   - Initializes pyttsx3 TTS engine (espeak-ng backend)
-   - Reduces speech rate by 25 for clarity
-   - Sets volume to 1.0 (100%)
+1. **`__init__(state: State, tts_preference: Optional[str])`** (lines 319-309)
+   - Configures Piper TTS if available (finds executable and model path)
+   - Initializes pyttsx3 TTS engine (espeak-ng backend) with English voice selection
+   - Selects TTS engine based on preference and availability
+   - Preference: "piper", "pyttsx3", or None (auto-detect)
 
 2. **`play_mp3(path: str, duration: float)`** (lines 297-349)
    - Creates VLC instance with ALSA output to `plughw:X,0`
@@ -442,16 +485,20 @@ instance = vlc.Instance('--aout=alsa', f'--alsa-audio-device={alsa_device}', '--
 ```
 The `plughw` plugin provides automatic sample rate conversion and channel mapping.
 
-3. **`generate_and_play_speech(text: str)`** (lines 360-382)
+3. **`generate_and_play_speech(text: str)`** (lines 622-667)
    - Creates temporary WAV file using `tempfile.NamedTemporaryFile`
-   - Calls `engine.save_to_file(text, temp_wav_path)`
+   - Calls `_generate_speech_with_piper()` or `_generate_speech_with_pyttsx3()` based on selection
+   - Falls back to pyttsx3 if Piper fails
+   - Waits for file to be ready using `_wait_for_audio_file()`
    - Plays via `play_mp3()` (VLC handles WAV format)
    - Cleans up temporary file
 
-4. **`run()`** (lines 384-409)
+4. **`run()`** (lines 670-713)
    - Waits on `audio_event` with 0.5s timeout
    - Switches to idle mode: `state.mode = "idle"`
-   - Routes based on `audio_type` ("speak", "sing", "generate")
+   - Routes based on `audio_type` ("speak", "sing", "generate", "joke", "flatter")
+   - For "joke": Calls `get_joke(previous_jokes=state.previous_jokes)`, tracks response
+   - For "flatter": Calls `get_flattery(previous_flattery=state.previous_flattery)`, tracks response
    - Restores previous mode: `state.mode = state.last_mode`
    - Clears event and resets audio_type
 
@@ -626,44 +673,80 @@ self.state.mode = self.state.last_mode
 
 ### 6. GreenPT API Integration for Dynamic Content
 
-**Decision**: Integrate optional GreenPT LLM API for joke and flattery commands
+**Decision**: Integrate optional GreenPT LLM API via `greenpt.py` module for joke and flattery commands with session-based repetition avoidance
 
 **Rationale**:
 - Provides dynamic, entertaining content without pre-recorded files
 - Adds personality and variety to the tree's interactions
 - LLM-generated content is family-appropriate and contextual
+- Session tracking ensures no repeated jokes/flattery during a session
 - Graceful degradation if API unavailable (prints error, continues operation)
+- Modular design: `greenpt.py` handles all API interactions
 
-**Implementation** (offline_voice_tree.py:135-199):
-```python
-def call_greenpt_api(prompt: str, max_tokens: int = 150) -> Optional[str]:
-    if not GREENPT_API_KEY:
-        print("GreenPT API key not configured...")
-        return None
+**Implementation** (`greenpt.py`):
+- `get_joke(previous_jokes: Optional[List[str]])`: Fetches joke, includes previous jokes in prompt to avoid repetition
+- `get_flattery(previous_flattery: Optional[List[str]])`: Fetches flattery, includes previous flattery in prompt
+- `infer()`: Core API interaction with configurable model, temperature, and max_tokens
+- Model persistence: Selected model stored in `selected_model.txt` for consistency
+- Automatic `.env` loading: Reads `local.env` file if present
 
-    response = requests.post(url, headers=headers, json=payload, timeout=10)
-    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-    return content.strip()
-```
+**Session Tracking** (`offline_voice_tree.py`):
+- `State.previous_jokes`: List of jokes told during session (max 10)
+- `State.previous_flattery`: List of flattery given during session (max 10)
+- Each new joke/flattery appended to list and passed to API in prompt
+- Prevents repetition by explicitly listing previous content in API request
 
 **Commands**:
-- `christmas tree joke`: Requests family-friendly festive joke, speaks via TTS
-- `christmas tree flatter`: Generates over-the-top humorous praise, speaks via TTS
+- `christmas tree joke`: Requests family-friendly festive joke, speaks via TTS, tracks in session
+- `christmas tree flatter`: Generates over-the-top humorous praise, speaks via TTS, tracks in session
 
 **Configuration**:
-- `GREENPT_API_BASE_URL`: API endpoint (env var or default)
-- `GREENPT_API_KEY`: Required authentication key
-- `GREENPT_MODEL_ID`: Model selection (default: gpt-4o-mini)
+- `GREENPT_API_BASE_URL`: API endpoint (default: `https://api.greenpt.ai/v1`)
+- `GREENPT_API_KEY`: Required authentication key (from env or `local.env`)
+- `GREENPT_MODEL_ID`: Model selection (default: `gemma-3-27b-it`)
 
 **Error Handling**:
 - Missing API key → Warning printed, command skipped
-- Network timeout (10s) → Error logged, operation continues
+- Network timeout (30s) → Error logged, operation continues
 - API failure → Error logged, LEDs restore to previous mode
+- Invalid JSON response → Helpful error message with response preview
 
 **Trade-offs**:
 - Requires internet connectivity (unlike core offline functionality)
 - Adds ~10-15s latency for API call + TTS generation
 - Introduces external dependency (can be disabled via missing API key)
+- Session tracking uses memory (limited to last 10 entries per type)
+
+### 7. Piper TTS Integration for High-Quality Speech
+
+**Decision**: Support optional Piper TTS alongside pyttsx3 for improved speech quality
+
+**Rationale**:
+- Piper TTS provides neural TTS with significantly better quality than espeak-ng
+- pyttsx3 can produce muffled or corrupted audio, especially with longer texts
+- User-selectable via command-line argument for flexibility
+- Automatic fallback to pyttsx3 if Piper unavailable
+
+**Implementation** (`offline_voice_tree.py:AudioController`):
+- `_configure_piper()`: Searches common locations for Piper executable, reads model path from `PIPER_MODEL_PATH`
+- `_configure_pyttsx3()`: Initializes pyttsx3 with English voice selection (prioritizes mbrola voices)
+- `_select_tts_engine()`: Determines engine based on user preference and availability
+- `_generate_speech_with_piper()`: Generates WAV via subprocess call to Piper CLI
+- `_generate_speech_with_pyttsx3()`: Generates WAV via pyttsx3 `save_to_file()`
+
+**Command-Line Interface**:
+- `--tts-engine auto`: Auto-detect (prefers Piper if available, default)
+- `--tts-engine piper`: Force Piper TTS (warns if unavailable)
+- `--tts-engine pyttsx3`: Force pyttsx3
+
+**Configuration**:
+- `PIPER_MODEL_PATH`: Path to Piper model `.onnx` file (required for Piper)
+- Piper executable: Auto-detected from PATH or common locations
+
+**Trade-offs**:
+- Piper requires additional setup (executable + model download, ~40-90MB)
+- Better quality but larger resource footprint
+- pyttsx3 always available as fallback
 
 ---
 
@@ -769,6 +852,8 @@ class State:
     audio_event: threading.Event  # Audio trigger
     audio_type: str     # "speak" | "generate" | "sing" | "joke" | "flatter" | None
     stop_event: threading.Event   # Shutdown signal
+    previous_jokes: List[str]     # Jokes told during session (max 10)
+    previous_flattery: List[str]  # Flattery given during session (max 10)
 ```
 
 ### State Transitions
@@ -879,8 +964,12 @@ flowchart TD
     I -->|speak| J["play_mp3()<br/>SPEECH_MP3_PATH"]
     I -->|sing| K["play_mp3()<br/>SING_MP3_PATH"]
     I -->|generate| L["generate_and_play_speech()<br/>text"]
-    I -->|joke| M["get_joke() from GreenPT<br/>generate_and_play_speech()"]
-    I -->|flatter| N["get_flattery() from GreenPT<br/>generate_and_play_speech()"]
+    I -->|joke| M["get_joke(previous_jokes)<br/>from greenpt.py"]
+    I -->|flatter| N["get_flattery(previous_flattery)<br/>from greenpt.py"]
+    M --> O["Track joke in<br/>state.previous_jokes"]
+    N --> P["Track flattery in<br/>state.previous_flattery"]
+    O --> L
+    P --> L
     J --> O[VLC plays via ALSA]
     K --> O
     L --> P[pyttsx3 generates WAV]
@@ -923,7 +1012,7 @@ flowchart TD
 | `VOSK_MODEL_PATH` | `./model` | Path to Vosk speech recognition model directory |
 | `GREENPT_API_BASE_URL` | `https://api.greenpt.example.com/v1` | Base URL for GreenPT API |
 | `GREENPT_API_KEY` | `""` (empty) | Authentication key for GreenPT API (required for joke/flatter commands) |
-| `GREENPT_MODEL_ID` | `gpt-4o-mini` | Model ID to use for GreenPT API requests |
+| `GREENPT_MODEL_ID` | `gemma-3-27b-it` | Model ID to use for GreenPT API requests |
 
 ### Constants (offline_voice_tree.py:91-124)
 
@@ -932,13 +1021,14 @@ flowchart TD
 | `MODEL_PATH` | `$VOSK_MODEL_PATH` or `./model` | Vosk model directory |
 | `SUPPORTED_COLOURS` | `["red", "green", "blue", ...]` | 10 recognized colors |
 | `SUPPORTED_COMMANDS` | `["disco", "phase", "speak", "generate", "sing", "joke", "flatter"]` | Non-color commands |
+| TTS engine selection | Command-line `--tts-engine` argument | "auto", "piper", or "pyttsx3" |
 | `DEFAULT_SPEECH_DURATION` | `10` | Seconds to play speech.mp3 |
 | `SPEECH_MP3_PATH` | `./speech.mp3` | Audio file for "speak" command |
 | `SING_MP3_PATH` | `./08-I-Wish-it-Could-be-Christmas-Everyday.mp3` | Song for "sing" command |
 | `DEFAULT_GENERATE_TEXT` | `"Hello everyone, this is your Christmas tree talking"` | TTS text for "generate" |
 | `GREENPT_API_BASE_URL` | `$GREENPT_API_BASE_URL` or `https://api.greenpt.example.com/v1` | GreenPT API endpoint |
 | `GREENPT_API_KEY` | `$GREENPT_API_KEY` or `""` | GreenPT API authentication key |
-| `GREENPT_MODEL_ID` | `$GREENPT_MODEL_ID` or `gpt-4o-mini` | GreenPT model to use |
+| `GREENPT_MODEL_ID` | `$GREENPT_MODEL_ID` or `gemma-3-27b-it` | GreenPT model to use |
 
 ### Hardware Configuration
 
@@ -962,9 +1052,10 @@ flowchart TD
 Core Dependencies:
 ├── vosk (0.3.45+)           # Offline speech recognition
 ├── sounddevice (0.4.6+)     # Audio capture
-├── pyttsx3 (2.90+)          # Text-to-speech
+├── pyttsx3 (2.90+)          # Text-to-speech (espeak-ng backend)
 ├── python-vlc (3.0.20123+)  # Audio playback
 ├── requests (2.31.0+)       # HTTP client for GreenPT API
+├── python-dotenv (optional) # Environment variable loading for greenpt.py
 ├── gpiozero (2.0+)          # GPIO/SPI control
 └── colorzero (2.0+)         # Color manipulation
 
@@ -981,6 +1072,11 @@ System Libraries:
 - Recommended: `vosk-model-small-en-us-0.15` (~50MB)
 - Download: https://alphacephei.com/vosk/models
 - Larger models available for better accuracy (up to 1.8GB)
+
+**Piper TTS Model** (optional, for high-quality TTS):
+- Recommended: `en_US-lessac-medium.onnx` (~40MB) or `en_US-lessac-high.onnx` (~90MB)
+- Download: https://huggingface.co/rhasspy/piper-voices
+- See [INSTALL_PIPER.md](INSTALL_PIPER.md) for installation instructions
 
 ### Hardware Dependencies
 
@@ -1149,13 +1245,23 @@ python /home/pi/Desktop/CODE/raspberrypi-xmastree/offline_voice_tree.py
 
 ### Source Files
 
-- `offline_voice_tree.py` (lines 1-560): Main application
+- `offline_voice_tree.py` (lines 1-939): Main application
+- `greenpt.py` (lines 1-574): GreenPT API client module with model management
 - `tree.py` (lines 1-174): Hardware driver
 - `README.md`: Installation and usage guide
+- `INSTALL_PIPER.md`: Piper TTS installation instructions
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-12-13
+**Document Version**: 2.0
+**Last Updated**: 2025-01-XX
 **Author**: Generated by Claude Code
 **License**: See project LICENSE
+
+**Recent Updates**:
+- Added Piper TTS support with command-line selection (`--tts-engine`)
+- Integrated `greenpt.py` module for AI-powered content generation
+- Added session-based repetition avoidance for jokes and flattery
+- Updated State class with `previous_jokes` and `previous_flattery` tracking
+- Enhanced AudioController with separate Piper and pyttsx3 configuration methods
+- Improved TTS engine selection with automatic fallback
