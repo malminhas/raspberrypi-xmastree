@@ -297,20 +297,36 @@ class AudioController(threading.Thread):
         # Piper is typically installed as a command-line tool on Raspberry Pi
         self.use_piper = False
         self.piper_model_path = os.environ.get("PIPER_MODEL_PATH", None)
+        self.piper_executable = None
         
-        # Check if piper command is available
+        # Check multiple possible locations for piper executable
         import shutil
-        if shutil.which("piper") is not None:
+        possible_piper_paths = [
+            shutil.which("piper"),  # Check PATH first
+            "/usr/local/bin/piper",
+            "/usr/bin/piper",
+            os.path.expanduser("~/.local/bin/piper"),
+            "/usr/local/piper/piper",  # If installed in /usr/local/piper directory
+        ]
+        
+        # Find piper executable
+        for piper_path in possible_piper_paths:
+            if piper_path and os.path.isfile(piper_path) and os.access(piper_path, os.X_OK):
+                self.piper_executable = piper_path
+                break
+        
+        if self.piper_executable:
             if self.piper_model_path and os.path.exists(self.piper_model_path):
                 self.use_piper = True
-                print("Using Piper TTS for high-quality speech synthesis")
+                print(f"Using Piper TTS for high-quality speech synthesis (found at: {self.piper_executable})")
             else:
-                print("Piper command found but no model configured. Using pyttsx3.")
+                print(f"Piper command found at {self.piper_executable} but no model configured. Using pyttsx3.")
                 print("  To use Piper TTS, set PIPER_MODEL_PATH environment variable")
                 print("  Example: export PIPER_MODEL_PATH=/path/to/en_US-lessac-medium.onnx")
         else:
             print("Piper TTS not found. Using pyttsx3.")
             print("  To install Piper TTS: https://github.com/rhasspy/piper/releases")
+            print("  Common locations: /usr/local/bin/piper, /usr/local/piper/piper")
         
         # Initialise the TTS engine once; on Linux this uses espeak via
         # pyttsx3.  Adjust rate and volume as desired.
@@ -419,12 +435,12 @@ class AudioController(threading.Thread):
                 temp_wav_path = tmp_file.name
             
             # Try Piper TTS first if available and configured
-            if self.use_piper:
+            if self.use_piper and self.piper_executable:
                 try:
                     # Use piper command-line tool to generate WAV file
                     # Piper reads text from stdin and outputs WAV to the specified file
                     result = subprocess.run(
-                        ["piper", "--model", self.piper_model_path, "--output_file", temp_wav_path],
+                        [self.piper_executable, "--model", self.piper_model_path, "--output_file", temp_wav_path],
                         input=text,
                         text=True,
                         capture_output=True,
