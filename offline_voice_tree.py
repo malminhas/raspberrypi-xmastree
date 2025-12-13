@@ -42,6 +42,7 @@ import json
 import os
 import queue
 import re
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -291,12 +292,59 @@ class AudioController(threading.Thread):
     def __init__(self, state: State):
         super().__init__(daemon=True)
         self.state = state
+        
+        # Try to use Piper TTS for better quality (optional, falls back to pyttsx3)
+        # Piper is typically installed as a command-line tool on Raspberry Pi
+        self.use_piper = False
+        self.piper_model_path = os.environ.get("PIPER_MODEL_PATH", None)
+        
+        # Check if piper command is available
+        import shutil
+        if shutil.which("piper") is not None:
+            if self.piper_model_path and os.path.exists(self.piper_model_path):
+                self.use_piper = True
+                print("Using Piper TTS for high-quality speech synthesis")
+            else:
+                print("Piper command found but no model configured. Using pyttsx3.")
+                print("  To use Piper TTS, set PIPER_MODEL_PATH environment variable")
+                print("  Example: export PIPER_MODEL_PATH=/path/to/en_US-lessac-medium.onnx")
+        else:
+            print("Piper TTS not found. Using pyttsx3.")
+            print("  To install Piper TTS: https://github.com/rhasspy/piper/releases")
+        
         # Initialise the TTS engine once; on Linux this uses espeak via
         # pyttsx3.  Adjust rate and volume as desired.
         self.engine = pyttsx3.init()
+        
+        # Try to select a better voice if available
+        voices = self.engine.getProperty('voices')
+        if voices:
+            # Prefer mbrola voices if available (better quality), otherwise use first available
+            mbrola_voice = None
+            for voice in voices:
+                if 'mbrola' in voice.name.lower() or 'mb-' in voice.name.lower():
+                    mbrola_voice = voice
+                    break
+            
+            if mbrola_voice:
+                self.engine.setProperty('voice', mbrola_voice.id)
+                print(f"Using pyttsx3 voice: {mbrola_voice.name}")
+            else:
+                # Try to find a non-default voice
+                for voice in voices:
+                    if 'default' not in voice.name.lower():
+                        self.engine.setProperty('voice', voice.id)
+                        print(f"Using pyttsx3 voice: {voice.name}")
+                        break
+        
+        # Adjust rate - slower is often clearer and less tinny
         rate = self.engine.getProperty('rate')
-        self.engine.setProperty('rate', rate - 25)
+        self.engine.setProperty('rate', max(100, rate - 50))  # Slower rate, minimum 100
         self.engine.setProperty('volume', 1.0)
+        
+        # Try to improve quality by using better espeak parameters if available
+        # This is done via environment variables that espeak-ng respects
+        os.environ.setdefault('ESPEAK_DATA_PATH', '/usr/share/espeak-ng-data')
 
     def play_mp3(self, path: str, duration: Optional[float] = None) -> None:
         """Play an MP3 file using VLC on the ReSpeaker 4?Mic board.  
@@ -362,7 +410,7 @@ class AudioController(threading.Thread):
             print(f"Error during TTS: {exc}")
     
     def generate_and_play_speech(self, text: str):
-        """Generate speech from text using pyttsx3, save to WAV file, and play via VLC."""
+        """Generate speech from text using Piper TTS (if available) or pyttsx3, save to WAV file, and play via VLC."""
         import tempfile
         try:
             print(f"Generating speech for: '{text}'")
@@ -370,9 +418,34 @@ class AudioController(threading.Thread):
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
                 temp_wav_path = tmp_file.name
             
-            # Generate speech and save to WAV file
-            self.engine.save_to_file(text, temp_wav_path)
-            self.engine.runAndWait()
+            # Try Piper TTS first if available and configured
+            if self.use_piper:
+                try:
+                    # Use piper command-line tool to generate WAV file
+                    # Piper reads text from stdin and outputs WAV to the specified file
+                    result = subprocess.run(
+                        ["piper", "--model", self.piper_model_path, "--output_file", temp_wav_path],
+                        input=text,
+                        text=True,
+                        capture_output=True,
+                        timeout=30,
+                        check=True
+                    )
+                    # Verify the file was created
+                    if os.path.exists(temp_wav_path) and os.path.getsize(temp_wav_path) > 0:
+                        print("Generated speech using Piper TTS (high quality)")
+                    else:
+                        raise FileNotFoundError("Piper did not generate output file")
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as piper_exc:
+                    print(f"Piper TTS failed, falling back to pyttsx3: {piper_exc}")
+                    # Fall through to pyttsx3
+                    self.use_piper = False
+            
+            # Fall back to pyttsx3 if Piper not available or failed
+            if not self.use_piper:
+                # Generate speech and save to WAV file
+                self.engine.save_to_file(text, temp_wav_path)
+                self.engine.runAndWait()
             
             # Play the generated WAV file using the existing play_mp3 method (VLC handles WAV too)
             self.play_mp3(temp_wav_path)
