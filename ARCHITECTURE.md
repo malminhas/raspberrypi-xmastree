@@ -857,7 +857,7 @@ flowchart TD
     C -->|Yes| D[Iterate led_sets: 0, 1, 2]
     C -->|No| Z[Check other modes]
     D --> E[For each LED in current set]
-    E --> F[tree[led].color += Hue10°]
+    E --> F["tree[led].color = tree[led].color + Hue(10°)"]
     F --> G{More LEDs in set?}
     G -->|Yes| E
     G -->|No| H{More sets?}
