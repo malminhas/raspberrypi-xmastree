@@ -42,6 +42,7 @@ import argparse
 import json
 import os
 import queue
+import random
 import re
 import subprocess
 import threading
@@ -229,6 +230,12 @@ class XmasTreeController(threading.Thread):
                 for led in leds:
                     self.tree[led].color = colours[i]
             self.tree[self.star_index].color = Color('white')
+        elif self.state.mode.lower() == "sparkle":
+            # Sparkle mode: initialize with random colors
+            colors = ['red', 'green', 'blue', 'yellow', 'orange', 'purple', 'white', 'pink']
+            for led in range(25):
+                self.tree[led].color = Color(random.choice(colors))
+            self.tree[self.star_index].color = Color('white')
 
         try:
             while not self.state.stop_event.is_set():
@@ -263,6 +270,12 @@ class XmasTreeController(threading.Thread):
                         elif mode == "idle":
                             # idle handled below; LEDs will be turned off
                             pass
+                        elif mode == "sparkle":
+                            # Sparkle mode: initialize with random colors
+                            colors = ['red', 'green', 'blue', 'yellow', 'orange', 'purple', 'white', 'pink']
+                            for led in range(25):
+                                self.tree[led].color = Color(random.choice(colors))
+                            self.tree[self.star_index].color = Color('white')
                         self.current_mode = mode
                     if mode == "disco":
                         # Cycle colours randomly across LED sets, similar to my‑tree.py
@@ -291,6 +304,29 @@ class XmasTreeController(threading.Thread):
                             for led in leds:
                                 self.tree[led].color = Color('black')
                         self.tree[self.star_index].color = Color('black')
+                    elif mode == "sparkle":
+                        # Sparkle effect: dynamically twinkle LEDs with random bright colors
+                        bright_colors = [Color('red'), Color('green'), Color('blue'), Color('yellow'), 
+                                        Color('orange'), Color('purple'), Color('white'), Color('pink')]
+                        dim_colors = [Color('darkred'), Color('darkgreen'), Color('darkblue'), 
+                                     Color('darkorange'), Color('darkviolet')]
+                        # Each frame, randomly assign LEDs to be bright, dim, or off
+                        for led in range(25):
+                            rand = random.random()
+                            if rand < 0.25:
+                                # ~25% bright sparkle
+                                self.tree[led].color = random.choice(bright_colors)
+                            elif rand < 0.5:
+                                # ~25% dimmed color
+                                self.tree[led].color = random.choice(dim_colors)
+                            else:
+                                # ~50% off (black)
+                                self.tree[led].color = Color('black')
+                        # Star twinkles between white and dimmed
+                        if random.random() < 0.7:
+                            self.tree[self.star_index].color = Color('white')
+                        else:
+                            self.tree[self.star_index].color = Color('gray')
                 except (AttributeError, RuntimeError) as e:
                     # GPIO has been closed, exit gracefully
                     if "NoneType" in str(e) or "off" in str(e).lower():
@@ -678,9 +714,13 @@ class AudioController(threading.Thread):
         while not self.state.stop_event.is_set():
             # Wait for a signal from the voice recognition thread (with timeout to check stop_event)
             if self.state.audio_event.wait(timeout=0.5):
-                # Enter idle lighting mode during audio playback
+                # Enter appropriate lighting mode during audio playback
                 self.state.last_mode = self.state.mode
-                self.state.mode = "idle"
+                # Use sparkle mode for jokes, idle for other audio
+                if self.state.audio_type == "joke":
+                    self.state.mode = "sparkle"
+                else:
+                    self.state.mode = "idle"
                 try:
                     if self.state.audio_type == "speak":
                         # Play the bundled speech MP3
