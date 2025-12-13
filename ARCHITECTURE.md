@@ -211,7 +211,7 @@ C4Component
     Rel(eventListener, modeManager, "Triggers", "Mode switch")
     Rel(eventListener, audioRouter, "Activates")
     Rel(audioRouter, mp3Player, "Routes", "speak/sing")
-    Rel(audioRouter, wavGenerator, "Routes", "generate")
+    Rel(audioRouter, wavGenerator, "Routes", "generate/joke/flatter")
     Rel(wavGenerator, ttsEngine, "Uses", "TTS synthesis")
     Rel(mp3Player, speaker, "Outputs", "ALSA plughw")
     Rel(modeManager, sharedState, "Updates", "Mode restoration")
@@ -245,7 +245,7 @@ C4Component
 | Component | Inputs | Outputs | Key Logic |
 |-----------|--------|---------|-----------|
 | Event Listener | audio_event | Wakeup signal | Blocks on threading.Event with 0.5s timeout |
-| Audio Router | audio_type | Handler selection | Routes based on "speak", "sing", or "generate" |
+| Audio Router | audio_type | Handler selection | Routes based on "speak", "sing", "generate", "joke", or "flatter" |
 | MP3 Player | File path | Audio stream | VLC instance with ALSA plughw:X,0 device |
 | TTS Engine | Text string | Spoken audio | pyttsx3 with espeak-ng backend |
 | WAV Generator | Text string | Temporary file | save_to_file() + play_mp3() + cleanup |
@@ -350,7 +350,7 @@ class State:
         self.last_mode = "disco"      # Previous mode (for restoration)
         self.text_to_speak = ""       # Text for TTS generation
         self.audio_event = threading.Event()  # Audio trigger signal
-        self.audio_type = None        # "speak", "generate", or "sing"
+        self.audio_type = None        # "speak", "generate", "sing", "joke", or "flatter"
         self.stop_event = threading.Event()   # Graceful shutdown signal
 ```
 
@@ -624,6 +624,47 @@ self.state.mode = "idle"
 self.state.mode = self.state.last_mode
 ```
 
+### 6. GreenPT API Integration for Dynamic Content
+
+**Decision**: Integrate optional GreenPT LLM API for joke and flattery commands
+
+**Rationale**:
+- Provides dynamic, entertaining content without pre-recorded files
+- Adds personality and variety to the tree's interactions
+- LLM-generated content is family-appropriate and contextual
+- Graceful degradation if API unavailable (prints error, continues operation)
+
+**Implementation** (offline_voice_tree.py:135-199):
+```python
+def call_greenpt_api(prompt: str, max_tokens: int = 150) -> Optional[str]:
+    if not GREENPT_API_KEY:
+        print("GreenPT API key not configured...")
+        return None
+
+    response = requests.post(url, headers=headers, json=payload, timeout=10)
+    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return content.strip()
+```
+
+**Commands**:
+- `christmas tree joke`: Requests family-friendly festive joke, speaks via TTS
+- `christmas tree flatter`: Generates over-the-top humorous praise, speaks via TTS
+
+**Configuration**:
+- `GREENPT_API_BASE_URL`: API endpoint (env var or default)
+- `GREENPT_API_KEY`: Required authentication key
+- `GREENPT_MODEL_ID`: Model selection (default: gpt-4o-mini)
+
+**Error Handling**:
+- Missing API key → Warning printed, command skipped
+- Network timeout (10s) → Error logged, operation continues
+- API failure → Error logged, LEDs restore to previous mode
+
+**Trade-offs**:
+- Requires internet connectivity (unlike core offline functionality)
+- Adds ~10-15s latency for API call + TTS generation
+- Introduces external dependency (can be disabled via missing API key)
+
 ---
 
 ## Threading Model
@@ -726,7 +767,7 @@ class State:
     last_mode: str      # Previous mode before audio playback
     text_to_speak: str  # Text for generate command
     audio_event: threading.Event  # Audio trigger
-    audio_type: str     # "speak" | "generate" | "sing" | None
+    audio_type: str     # "speak" | "generate" | "sing" | "joke" | "flatter" | None
     stop_event: threading.Event   # Shutdown signal
 ```
 
@@ -838,14 +879,18 @@ flowchart TD
     I -->|speak| J["play_mp3()<br/>SPEECH_MP3_PATH"]
     I -->|sing| K["play_mp3()<br/>SING_MP3_PATH"]
     I -->|generate| L["generate_and_play_speech()<br/>text"]
-    J --> M[VLC plays via ALSA]
-    K --> M
-    L --> N[pyttsx3 generates WAV]
-    N --> M
-    M --> O[Audio playback completes]
-    O --> P[state.mode = state.last_mode]
-    P --> Q["XmasTreeController<br/>restores LEDs"]
-    Q --> R[state.audio_event.clear]
+    I -->|joke| M["get_joke() from GreenPT<br/>generate_and_play_speech()"]
+    I -->|flatter| N["get_flattery() from GreenPT<br/>generate_and_play_speech()"]
+    J --> O[VLC plays via ALSA]
+    K --> O
+    L --> P[pyttsx3 generates WAV]
+    M --> P
+    N --> P
+    P --> O
+    O --> Q[Audio playback completes]
+    Q --> R[state.mode = state.last_mode]
+    R --> S["XmasTreeController<br/>restores LEDs"]
+    S --> T[state.audio_event.clear]
 ```
 
 ### LED Animation Flow (Disco Mode)
@@ -876,6 +921,9 @@ flowchart TD
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `VOSK_MODEL_PATH` | `./model` | Path to Vosk speech recognition model directory |
+| `GREENPT_API_BASE_URL` | `https://api.greenpt.example.com/v1` | Base URL for GreenPT API |
+| `GREENPT_API_KEY` | `""` (empty) | Authentication key for GreenPT API (required for joke/flatter commands) |
+| `GREENPT_MODEL_ID` | `gpt-4o-mini` | Model ID to use for GreenPT API requests |
 
 ### Constants (offline_voice_tree.py:91-124)
 
@@ -883,11 +931,14 @@ flowchart TD
 |----------|-------|-------------|
 | `MODEL_PATH` | `$VOSK_MODEL_PATH` or `./model` | Vosk model directory |
 | `SUPPORTED_COLOURS` | `["red", "green", "blue", ...]` | 10 recognized colors |
-| `SUPPORTED_COMMANDS` | `["disco", "phase", "speak", "generate", "sing"]` | Non-color commands |
+| `SUPPORTED_COMMANDS` | `["disco", "phase", "speak", "generate", "sing", "joke", "flatter"]` | Non-color commands |
 | `DEFAULT_SPEECH_DURATION` | `10` | Seconds to play speech.mp3 |
 | `SPEECH_MP3_PATH` | `./speech.mp3` | Audio file for "speak" command |
 | `SING_MP3_PATH` | `./08-I-Wish-it-Could-be-Christmas-Everyday.mp3` | Song for "sing" command |
 | `DEFAULT_GENERATE_TEXT` | `"Hello everyone, this is your Christmas tree talking"` | TTS text for "generate" |
+| `GREENPT_API_BASE_URL` | `$GREENPT_API_BASE_URL` or `https://api.greenpt.example.com/v1` | GreenPT API endpoint |
+| `GREENPT_API_KEY` | `$GREENPT_API_KEY` or `""` | GreenPT API authentication key |
+| `GREENPT_MODEL_ID` | `$GREENPT_MODEL_ID` or `gpt-4o-mini` | GreenPT model to use |
 
 ### Hardware Configuration
 
@@ -913,6 +964,7 @@ Core Dependencies:
 ├── sounddevice (0.4.6+)     # Audio capture
 ├── pyttsx3 (2.90+)          # Text-to-speech
 ├── python-vlc (3.0.20123+)  # Audio playback
+├── requests (2.31.0+)       # HTTP client for GreenPT API
 ├── gpiozero (2.0+)          # GPIO/SPI control
 └── colorzero (2.0+)         # Color manipulation
 

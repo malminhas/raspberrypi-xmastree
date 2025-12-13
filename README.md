@@ -248,9 +248,10 @@ graph TB
 
 ### Key Features
 
-* **Fully offline**: No internet connection required
+* **Fully offline**: No internet connection required for core functionality
 * **Vosk speech recognition**: On-device speech-to-text using local models
 * **Local TTS**: Text-to-speech using pyttsx3 (espeak-ng)
+* **AI-powered commands** (optional): Dynamic joke and flattery generation via GreenPT API
 * **Same command set**: Compatible with `my-voice-tree.py` commands
 * **Thread-based architecture**: Separate threads for voice recognition, LED control, and audio
 * **Graceful shutdown**: Handles CTRL-C cleanly without crashes
@@ -292,6 +293,11 @@ graph TB
    ```bash
    (xmastree) $ pip install pyttsx3
    $ sudo apt install espeak-ng
+   ```
+
+5. **HTTP Client** (for joke and flatter commands):
+   ```bash
+   (xmastree) $ pip install requests
    ```
 
 #### Running the Script
@@ -353,6 +359,9 @@ All threads share a `State` object for coordination and use `threading.Event` fo
 * **Audio**: `christmas tree speak` (plays `speech.mp3` file)
 * **Audio**: `christmas tree generate` (generates speech using pyttsx3 TTS engine)
 * **Music**: `christmas tree sing` (plays configured song from `08-I-Wish-it-Could-be-Christmas-Everyday.mp3`)
+* **AI Commands** (requires GreenPT API):
+  * `christmas tree joke` (fetches and speaks a family-friendly joke)
+  * `christmas tree flatter` (generates and speaks over-the-top praise)
 
 ### Audio Playback
 
@@ -367,11 +376,28 @@ During audio playback (speak, generate, or sing commands), the LEDs are temporar
 
 ### Configuration
 
-You can customize the following paths in the script:
+You can customize the following paths and settings in the script:
 
 * `SPEECH_MP3_PATH`: Path to MP3 file for "speak" command (default: `speech.mp3`)
 * `SING_MP3_PATH`: Path to song file for "sing" command (default: `08-I-Wish-it-Could-be-Christmas-Everyday.mp3`)
 * `MODEL_PATH`: Path to Vosk model directory (default: `./model` or `VOSK_MODEL_PATH` env var)
+
+**GreenPT API Configuration** (optional, for joke and flatter commands):
+
+To use the AI-powered joke and flatter commands, configure the following environment variables:
+
+```bash
+export GREENPT_API_BASE_URL="https://api.greenpt.example.com/v1"
+export GREENPT_API_KEY="your_api_key_here"
+export GREENPT_MODEL_ID="gpt-4o-mini"  # optional, defaults to gpt-4o-mini
+```
+
+Then run the script:
+```bash
+(xmastree) $ python offline_voice_tree.py
+```
+
+If the API key is not configured, the joke and flatter commands will print a warning and skip execution. All other commands continue to work normally
 
 ---
 
@@ -441,13 +467,14 @@ The offline version is ideal for standalone installations where network connecti
 
 | Feature | my-voice-tree.py | offline_voice_tree.py |
 |---------|-----------------|----------------------|
-| Internet Required | ✅ Yes | ❌ No |
+| Internet Required | ✅ Yes | ❌ No (optional for AI commands) |
 | Speech Recognition | AWS Transcribe | Vosk (local) |
 | Audio Playback | MP3 files | MP3 + pyttsx3 TTS |
+| AI-Generated Content | ❌ No | ✅ Yes (joke/flatter via GreenPT) |
 | Setup Complexity | Higher (AWS config) | Lower (model download) |
-| Cost | Pay-per-use AWS | Free (one-time model) |
+| Cost | Pay-per-use AWS | Free (optional GreenPT API) |
 | Latency | Network dependent | Local (faster) |
-| Privacy | Audio sent to AWS | Fully local |
+| Privacy | Audio sent to AWS | Fully local (except AI commands) |
 | Best For | Cloud-enabled setups | Standalone/offline use |
 
 ---

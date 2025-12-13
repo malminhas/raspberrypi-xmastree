@@ -23,6 +23,11 @@ Key features
   generates speech from the provided text using the local TTS engine.
 * An optional “sing” command which plays a provided music file (for
   example, “I Wish It Could Be Christmas Every Day”).
+* AI‑powered entertainment commands (optional, requires GreenPT API):
+  "christmas tree joke" fetches and speaks a family‑friendly joke, while
+  "christmas tree flatter" generates and speaks over‑the‑top humorous praise.
+  These commands require internet connectivity and an API key but gracefully
+  degrade if unavailable.
 * Cooperative multitasking via Python threads: a background thread handles
   audio transcription, another drives the LED animations, and a third handles
   speech synthesis or music playback.  Shared state between threads
