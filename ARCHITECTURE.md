@@ -862,7 +862,7 @@ flowchart TD
     G -->|Yes| E
     G -->|No| H{More sets?}
     H -->|Yes| D
-    H -->|No| I[tree[star_index].color = white]
+    H -->|No| I["tree[star_index].color = white"]
     I --> J[Sleep 50ms]
     J --> A
 ```
