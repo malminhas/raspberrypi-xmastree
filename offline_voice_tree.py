@@ -37,6 +37,7 @@ import json
 import os
 import queue
 import re
+import requests
 import threading
 import time
 from pathlib import Path
@@ -106,7 +107,7 @@ SUPPORTED_COLOURS = [
 ]
 
 # Commands other than colours
-SUPPORTED_COMMANDS = ["disco", "phase", "speak", "generate", "sing"]
+SUPPORTED_COMMANDS = ["disco", "phase", "speak", "generate", "sing", "joke", "flatter"]
 
 # Length (in seconds) to wait while playing the bundled MP3 via “speak”.
 DEFAULT_SPEECH_DURATION = 10
@@ -121,6 +122,82 @@ SING_MP3_PATH = str(Path(__file__).parent / "08-I-Wish-it-Could-be-Christmas-Eve
 
 # Default text to speak when "generate" command is used (since grammar prevents capturing text)
 DEFAULT_GENERATE_TEXT = "Hello everyone, this is your Christmas tree talking"
+
+# GreenPT API configuration for joke and flatter commands
+GREENPT_API_BASE_URL = os.environ.get("GREENPT_API_BASE_URL", "https://api.greenpt.example.com/v1")
+GREENPT_API_KEY = os.environ.get("GREENPT_API_KEY", "")
+GREENPT_MODEL_ID = os.environ.get("GREENPT_MODEL_ID", "gpt-4o-mini")
+
+# -----------------------------------------------------------------------------
+# GreenPT API helper functions
+# -----------------------------------------------------------------------------
+
+def call_greenpt_api(prompt: str, max_tokens: int = 150) -> Optional[str]:
+    """
+    Call the GreenPT API with the given prompt and return the generated text.
+    Returns None if the API call fails or if the API key is not configured.
+    """
+    if not GREENPT_API_KEY:
+        print("GreenPT API key not configured. Set GREENPT_API_KEY environment variable.")
+        return None
+
+    try:
+        url = f"{GREENPT_API_BASE_URL}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {GREENPT_API_KEY}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": GREENPT_MODEL_ID,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 0.7,
+        }
+
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+
+        result = response.json()
+        # Extract the generated text from the response
+        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        return content.strip() if content else None
+
+    except requests.exceptions.Timeout:
+        print("GreenPT API request timed out")
+        return None
+    except requests.exceptions.RequestException as exc:
+        print(f"GreenPT API request failed: {exc}")
+        return None
+    except Exception as exc:
+        print(f"Unexpected error calling GreenPT API: {exc}")
+        return None
+
+
+def get_joke() -> Optional[str]:
+    """
+    Request a family-friendly joke from the GreenPT API.
+    Returns the joke text or None if the request fails.
+    """
+    prompt = (
+        "Tell me a short, tasteful, family-friendly joke suitable for a Christmas "
+        "gathering. Keep it under 50 words and make it festive if possible."
+    )
+    return call_greenpt_api(prompt, max_tokens=100)
+
+
+def get_flattery() -> Optional[str]:
+    """
+    Request over-the-top ostentatiously sycophantic praise from the GreenPT API.
+    Returns the flattery text or None if the request fails.
+    """
+    prompt = (
+        "Generate an over-the-top, ostentatiously sycophantic praise for someone "
+        "in a humorous way. Make it ridiculously flattering and amusing. Keep it "
+        "under 50 words."
+    )
+    return call_greenpt_api(prompt, max_tokens=100)
+
 
 # -----------------------------------------------------------------------------
 # Global state shared between threads
@@ -398,6 +475,20 @@ class AudioController(threading.Thread):
                     elif self.state.audio_type == "generate":
                         # Generate speech using pyttsx3, save to WAV, and play via VLC
                         self.generate_and_play_speech(self.state.text_to_speak)
+                    elif self.state.audio_type == "joke":
+                        # Fetch a joke from GreenPT API and speak it
+                        joke = get_joke()
+                        if joke:
+                            self.generate_and_play_speech(joke)
+                        else:
+                            print("Failed to fetch joke from GreenPT API")
+                    elif self.state.audio_type == "flatter":
+                        # Fetch flattery from GreenPT API and speak it
+                        flattery = get_flattery()
+                        if flattery:
+                            self.generate_and_play_speech(flattery)
+                        else:
+                            print("Failed to fetch flattery from GreenPT API")
                     else:
                         print(f"Unknown audio type: {self.state.audio_type}")
                 finally:
@@ -514,6 +605,18 @@ class VoiceRecognizer(threading.Thread):
             print("Preparing to generate speech using pyttsx3")
             self.state.text_to_speak = DEFAULT_GENERATE_TEXT
             self.state.audio_type = "generate"
+            self.state.audio_event.set()
+            return
+        # Joke: fetch a joke from GreenPT API and speak it
+        if command == "joke":
+            print("Preparing to fetch and speak a joke")
+            self.state.audio_type = "joke"
+            self.state.audio_event.set()
+            return
+        # Flatter: fetch flattery from GreenPT API and speak it
+        if command == "flatter":
+            print("Preparing to fetch and speak flattery")
+            self.state.audio_type = "flatter"
             self.state.audio_event.set()
             return
         print(f"Unrecognised command '{command}'; ignoring")
