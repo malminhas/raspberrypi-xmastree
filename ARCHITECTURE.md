@@ -805,20 +805,20 @@ stateDiagram-v2
 
 ```mermaid
 flowchart TD
-    A[User speaks: 'christmas tree red'] --> B[Microphone captures audio]
+    A["User speaks:<br/>'christmas tree red'"] --> B["Microphone<br/>captures audio"]
     B --> C[sounddevice callback]
-    C --> D[Audio enqueued to queue.Queue]
-    D --> E[VoiceRecognizer dequeues audio]
+    C --> D["Audio enqueued<br/>to queue.Queue"]
+    D --> E["VoiceRecognizer<br/>dequeues audio"]
     E --> F[Vosk AcceptWaveform]
     F --> G{Final result?}
     G -->|No| E
     G -->|Yes| H[Parse JSON result]
-    H --> I[Extract text: 'christmas tree red']
+    H --> I["Extract text:<br/>'christmas tree red'"]
     I --> J[Regex match: command='red']
     J --> K[state.mode = 'red']
-    K --> L[XmasTreeController reads mode]
+    K --> L["XmasTreeController<br/>reads mode"]
     L --> M[Detect mode transition]
-    M --> N[Set all LEDs to Color'red']
+    M --> N["Set all LEDs to<br/>Color('red')"]
     N --> O[SPI transfer to hardware]
     O --> P[User sees red LEDs]
 ```
@@ -827,24 +827,24 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[User speaks: 'christmas tree speak'] --> B[VoiceRecognizer processes]
+    A["User speaks:<br/>'christmas tree speak'"] --> B["VoiceRecognizer<br/>processes"]
     B --> C[state.audio_type = 'speak']
     C --> D[state.audio_event.set]
     D --> E[AudioController wakes up]
     E --> F[state.last_mode = state.mode]
     F --> G[state.mode = 'idle']
-    G --> H[XmasTreeController turns off LEDs]
+    G --> H["XmasTreeController<br/>turns off LEDs"]
     H --> I{audio_type?}
-    I -->|speak| J[play_mp3SPEECH_MP3_PATH]
-    I -->|sing| K[play_mp3SING_MP3_PATH]
-    I -->|generate| L[generate_and_play_speechtext]
+    I -->|speak| J["play_mp3()<br/>SPEECH_MP3_PATH"]
+    I -->|sing| K["play_mp3()<br/>SING_MP3_PATH"]
+    I -->|generate| L["generate_and_play_speech()<br/>text"]
     J --> M[VLC plays via ALSA]
     K --> M
     L --> N[pyttsx3 generates WAV]
     N --> M
     M --> O[Audio playback completes]
     O --> P[state.mode = state.last_mode]
-    P --> Q[XmasTreeController restores LEDs]
+    P --> Q["XmasTreeController<br/>restores LEDs"]
     Q --> R[state.audio_event.clear]
 ```
 
@@ -852,12 +852,12 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[XmasTreeController loop iteration] --> B[Read state.mode]
+    A["XmasTreeController<br/>loop iteration"] --> B[Read state.mode]
     B --> C{mode == 'disco'?}
-    C -->|Yes| D[Iterate led_sets: 0, 1, 2]
+    C -->|Yes| D["Iterate led_sets:<br/>0, 1, 2"]
     C -->|No| Z[Check other modes]
-    D --> E[For each LED in current set]
-    E --> F["tree[led].color = tree[led].color + Hue(10°)"]
+    D --> E["For each LED<br/>in current set"]
+    E --> F["tree[led].color =<br/>tree[led].color + Hue(10°)"]
     F --> G{More LEDs in set?}
     G -->|Yes| E
     G -->|No| H{More sets?}
