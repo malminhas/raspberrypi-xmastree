@@ -12,6 +12,7 @@ graceful degradation when the API is unavailable or not configured.
 """
 
 import os
+import random
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -74,10 +75,19 @@ def _handle_response(resp: requests.Response) -> Dict[str, Any]:
         resp.raise_for_status()
     except requests.HTTPError as exc:
         # Provide a helpful error message
+        error_body = resp.text if resp.text else "(no body)"
         raise RuntimeError(
-            f"API request failed [{resp.status_code}]: {resp.text}"
+            f"API request failed [{resp.status_code}]: {error_body}"
         ) from exc
-    return resp.json()
+    
+    # Try to parse JSON, handle empty or invalid responses
+    try:
+        return resp.json()
+    except (ValueError, requests.exceptions.JSONDecodeError) as json_exc:
+        # If response is not valid JSON, provide helpful error
+        raise RuntimeError(
+            f"API returned invalid JSON [{resp.status_code}]: {resp.text[:200] if resp.text else '(empty response)'}"
+        ) from json_exc
 
 
 def _get_headers() -> Dict[str, str]:
@@ -265,22 +275,81 @@ def infer(prompt: str, max_tokens: int = 150, temperature: float = 0.7,
 # Convenience Functions
 # -----------------------------------------------------------------------------
 
-def get_joke() -> Optional[str]:
+def get_joke(previous_jokes: Optional[List[str]] = None) -> Optional[str]:
+    """Request a family-friendly joke from the GreenPT API.
+    
+    Args:
+        previous_jokes: Optional list of previously told jokes to avoid repetition
+        
+    Returns:
+        The joke text or None if the request fails.
+        
+    Uses randomized prompts and higher temperature for variety. If previous_jokes
+    is provided, the prompt will explicitly request a different joke from those.
     """
-    Request a family-friendly joke from the GreenPT API.
-    Returns the joke text or None if the request fails.
-    """
-    prompt = "Tell one short, family-friendly, festive joke suitable for a Christmas gathering. Keep it under 50 words."    
-    return infer(prompt, max_tokens=100)
+    # Vary the prompt to encourage different types of jokes
+    joke_types = [
+        "a pun",
+        "a one-liner",
+        "a knock-knock joke",
+        "a wordplay joke",
+        "a dad joke",
+        "a clever joke",
+        "a silly joke",
+        "a witty joke"
+    ]
+    
+    topics = [
+        "Christmas",
+        "the holidays",
+        "winter",
+        "Santa",
+        "reindeer",
+        "snow",
+        "gifts",
+        "family gatherings"
+    ]
+    
+    # Randomly select joke type and topic for variety
+    joke_type = random.choice(joke_types)
+    topic = random.choice(topics)
+    
+    # Build base prompt
+    base_prompt = (f"Share a new, family-friendly {joke_type} about {topic}. Maximum 50 words. "
+                   f"Return only the joke text. No emojis or non-alphabetic characters. Be creative and original.")
+    
+    # Add context about previous jokes if provided
+    if previous_jokes and len(previous_jokes) > 0:
+        previous_jokes_text = "\n".join([f"- {joke}" for joke in previous_jokes])
+        base_prompt += f"\n\nDo NOT repeat any of these jokes:\n{previous_jokes_text}\n\nMake sure your joke is completely different from all of the above."
+    
+    prompt = base_prompt
+    
+    # Use higher temperature (0.9-1.0) for more variety and creativity
+    temperature = random.uniform(0.85, 1.0)
+    
+    print(f"[GreenPT] Prompt: {prompt}")
+    print(f"[GreenPT] Temperature: {temperature:.2f}")
+    # 150 tokens is sufficient for ~50 words (allows buffer for longer jokes)
+    result = infer(prompt, max_tokens=150, temperature=temperature)
+    if result:
+        print(f"[GreenPT] Response: {result}")
+    return result
 
 
 def get_flattery() -> Optional[str]:
     """
     Request over-the-top ostentatiously sycophantic praise from the GreenPT API.
-    Returns the flattery text or None if the request fails.
+    Returns the flattery text or None if the request fails.  No emojis.
     """
-    prompt = "Write a humorous, absurdly over-the-top piece of sycophantic praise for me. Make it ridiculously flattering. Under 50 words."
-    return infer(prompt, max_tokens=100)
+    prompt = ("Write a humorous, absurdly over-the-top piece of sycophantic effusive praise for me. "
+              "Make it ridiculously flattering. Under 50 words. No emojis.")
+    print(f"[GreenPT] Prompt: {prompt}")
+    # 150 tokens is sufficient for ~50 words (allows buffer for longer flattery)
+    result = infer(prompt, max_tokens=150)
+    if result:
+        print(f"[GreenPT] Response: {result}")
+    return result
 
 
 # -----------------------------------------------------------------------------
