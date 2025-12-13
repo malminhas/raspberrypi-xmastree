@@ -337,13 +337,27 @@ def get_joke(previous_jokes: Optional[List[str]] = None) -> Optional[str]:
     return result
 
 
-def get_flattery() -> Optional[str]:
+def get_flattery(previous_flattery: Optional[List[str]] = None) -> Optional[str]:
+    """Request over-the-top ostentatiously sycophantic praise from the GreenPT API.
+    
+    Args:
+        previous_flattery: Optional list of previously given flattery to avoid repetition
+        
+    Returns:
+        The flattery text or None if the request fails.
+        
+    If previous_flattery is provided, the prompt will explicitly request different
+    flattery from those previously given.
     """
-    Request over-the-top ostentatiously sycophantic praise from the GreenPT API.
-    Returns the flattery text or None if the request fails.  No emojis.
-    """
+    # Build base prompt
     prompt = ("Write a humorous, absurdly over-the-top piece of sycophantic effusive praise for me. "
-              "Make it ridiculously flattering. Under 50 words. No emojis.")
+              "Make it ridiculously flattering. Under 50 words. No emojis or non-alphabetic characters.")
+    
+    # Add context about previous flattery if provided
+    if previous_flattery and len(previous_flattery) > 0:
+        previous_flattery_text = "\n".join([f"- {flattery}" for flattery in previous_flattery])
+        prompt += f"\n\nDo NOT repeat any of this flattery:\n{previous_flattery_text}\n\nMake sure your flattery is completely different from all of the above."
+    
     print(f"[GreenPT] Prompt: {prompt}")
     # 150 tokens is sufficient for ~50 words (allows buffer for longer flattery)
     result = infer(prompt, max_tokens=150)
