@@ -38,6 +38,7 @@ download a Vosk model.  See the accompanying README for full details.
 
 """
 
+import argparse
 import json
 import os
 import queue
@@ -46,7 +47,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional  # for type hints compatible with Python < 3.10
+from typing import Optional, Any  # for type hints compatible with Python < 3.10
 
 from colorzero import Color, Hue # type: ignore
 from tree import RGBXmasTree  # Hardware driver for PiHut’s 3D Xmas tree
@@ -79,12 +80,10 @@ for idx, dev in enumerate(devices):
 
 # Fall back to the system default input device if none found
 if respeaker_index is None:
-    print("ReSpeaker microphone not found; using default input device.")
     sd.default.device = (None, None)
 else:
     # Set the ReSpeaker as the default input device
     sd.default.device = (respeaker_index, None)
-    print(f"Using ReSpeaker device #{respeaker_index}: {devices[respeaker_index]['name']}")
 
 # Set a fixed sample rate (Vosk models typically use 16 kHz)
 sd.default.samplerate = 16000
@@ -132,7 +131,11 @@ from greenpt import get_joke, get_flattery
 # -----------------------------------------------------------------------------
 
 class State:
-    """A simple container for mutable state shared between threads."""
+    """A simple container for mutable state shared between threads.
+    
+    This class holds the shared state that is accessed and modified by
+    multiple threads (voice recognition, LED control, and audio playback).
+    """
 
     def __init__(self):
         # Current lighting mode: one of SUPPORTED_COLOURS, "disco", "phase",
@@ -150,6 +153,10 @@ class State:
         self.audio_type = None
         # Flag to signal threads to stop gracefully
         self.stop_event = threading.Event()
+        # Track jokes told during this session to avoid repetition
+        self.previous_jokes = []
+        # Track flattery given during this session to avoid repetition
+        self.previous_flattery = []
 
 
 STATE = State()
@@ -160,9 +167,21 @@ STATE = State()
 # -----------------------------------------------------------------------------
 
 class XmasTreeController(threading.Thread):
-    """Thread that drives the RGB Xmas tree based on the shared state."""
+    """Thread that drives the RGB Xmas tree based on the shared state.
+    
+    This thread continuously updates the LED colors and patterns based on
+    the current mode stored in the shared state. It handles disco mode
+    (random color cycling), phase mode (synchronized hue cycling), solid
+    colors, and idle mode (all LEDs off).
+    """
 
     def __init__(self, tree: RGBXmasTree, state: State):
+        """Initialize the LED controller thread.
+        
+        Args:
+            tree: The RGBXmasTree hardware interface
+            state: Shared state object for inter-thread communication
+        """
         super().__init__(daemon=True)
         self.tree = tree
         self.state = state
@@ -179,7 +198,12 @@ class XmasTreeController(threading.Thread):
         # produce a clear transition.
         self.current_mode = state.mode
 
-    def run(self):
+    def run(self) -> None:
+        """Main thread loop that continuously updates LED colors based on state.
+        
+        Handles mode transitions and implements the various lighting patterns
+        (disco, phase, solid colors, idle). Runs until stop_event is set.
+        """
         # Initial configuration: set brightness and colours.  We start in
         # whatever mode is recorded in state.mode (usually "disco").  If the
         # initial mode is disco we seed the LEDs with red/green/blue groups.
@@ -287,26 +311,53 @@ class XmasTreeController(threading.Thread):
 # -----------------------------------------------------------------------------
 
 class AudioController(threading.Thread):
-    """Thread that handles speech synthesis and music playback."""
+    """Thread that handles speech synthesis and music playback.
+    
+    This thread manages audio output including TTS generation (using either
+    Piper TTS or pyttsx3), MP3 playback, and WAV file playback. It responds
+    to audio events set by the voice recognition thread.
+    """
 
-    def __init__(self, state: State):
+    def __init__(self, state: State, tts_preference: Optional[str] = None):
+        """Initialize the audio controller thread.
+        
+        Args:
+            state: Shared state object for inter-thread communication
+            tts_preference: TTS engine preference - "piper", "pyttsx3", or None (auto-detect)
+        """
         super().__init__(daemon=True)
         self.state = state
+        # tts_preference: "piper", "pyttsx3", or None (auto-detect)
+        self.tts_preference = tts_preference
         
-        # Try to use Piper TTS for better quality (optional, falls back to pyttsx3)
-        # Piper is typically installed as a command-line tool on Raspberry Pi
-        self.use_piper = False
-        self.piper_model_path = os.environ.get("PIPER_MODEL_PATH", None)
+        # Piper TTS configuration
         self.piper_executable = None
+        self.piper_model_path = None
+        self.use_piper = False
+        
+        # pyttsx3 engine (initialized only if needed)
+        self.engine = None
+        
+        # Configure and select TTS engine
+        self._configure_piper()
+        self._configure_pyttsx3()
+        self._select_tts_engine()
+    
+    def _configure_piper(self) -> None:
+        """Configure Piper TTS by finding executable and model path.
+        
+        Searches common installation locations for the Piper executable and
+        reads the model path from the PIPER_MODEL_PATH environment variable.
+        """
+        import shutil
         
         # Check multiple possible locations for piper executable
-        import shutil
         possible_piper_paths = [
             shutil.which("piper"),  # Check PATH first
             "/usr/local/bin/piper",
             "/usr/bin/piper",
             os.path.expanduser("~/.local/bin/piper"),
-            "/usr/local/piper/piper",  # If installed in /usr/local/piper directory
+            "/usr/local/piper/piper",
         ]
         
         # Find piper executable
@@ -315,43 +366,52 @@ class AudioController(threading.Thread):
                 self.piper_executable = piper_path
                 break
         
-        if self.piper_executable:
-            if self.piper_model_path and os.path.exists(self.piper_model_path):
-                self.use_piper = True
-                print(f"Using Piper TTS for high-quality speech synthesis (found at: {self.piper_executable})")
-            else:
-                print(f"Piper command found at {self.piper_executable} but no model configured. Using pyttsx3.")
-                print("  To use Piper TTS, set PIPER_MODEL_PATH environment variable")
-                print("  Example: export PIPER_MODEL_PATH=/path/to/en_US-lessac-medium.onnx")
-        else:
-            print("Piper TTS not found. Using pyttsx3.")
-            print("  To install Piper TTS: https://github.com/rhasspy/piper/releases")
-            print("  Common locations: /usr/local/bin/piper, /usr/local/piper/piper")
+        # Get model path from environment
+        self.piper_model_path = os.environ.get("PIPER_MODEL_PATH", None)
+    
+    def _configure_pyttsx3(self) -> None:
+        """Configure pyttsx3 TTS engine with English voice selection.
         
-        # Initialise the TTS engine once; on Linux this uses espeak via
-        # pyttsx3.  Adjust rate and volume as desired.
+        Initializes the pyttsx3 engine and selects the best available English
+        voice, prioritizing mbrola voices for better quality. Also configures
+        speech rate and volume settings.
+        """
+        # Initialize the TTS engine
         self.engine = pyttsx3.init()
         
-        # Try to select a better voice if available
+        # Try to select an English voice if available
         voices = self.engine.getProperty('voices')
         if voices:
-            # Prefer mbrola voices if available (better quality), otherwise use first available
-            mbrola_voice = None
-            for voice in voices:
-                if 'mbrola' in voice.name.lower() or 'mb-' in voice.name.lower():
-                    mbrola_voice = voice
-                    break
+            # Priority: English mbrola > English non-mbrola > any mbrola > any English > default
+            english_mbrola = None
+            english_voice = None
+            any_mbrola = None
+            any_english = None
             
-            if mbrola_voice:
-                self.engine.setProperty('voice', mbrola_voice.id)
-                print(f"Using pyttsx3 voice: {mbrola_voice.name}")
-            else:
-                # Try to find a non-default voice
-                for voice in voices:
-                    if 'default' not in voice.name.lower():
-                        self.engine.setProperty('voice', voice.id)
-                        print(f"Using pyttsx3 voice: {voice.name}")
-                        break
+            for voice in voices:
+                name_lower = voice.name.lower()
+                id_lower = voice.id.lower() if hasattr(voice, 'id') else ''
+                
+                # Check if it's English (common patterns: en, en_us, en-gb, english, etc.)
+                is_english = any(marker in name_lower or marker in id_lower 
+                                for marker in ['en', 'english', 'en_us', 'en-gb', 'en_gb', 'en-us'])
+                is_mbrola = 'mbrola' in name_lower or 'mb-' in name_lower
+                
+                if is_english and is_mbrola:
+                    english_mbrola = voice
+                elif is_english and not english_voice:
+                    english_voice = voice
+                elif is_mbrola and not any_mbrola:
+                    any_mbrola = voice
+                elif is_english and not any_english:
+                    any_english = voice
+            
+            # Select best available voice
+            selected_voice = english_mbrola or english_voice or any_mbrola or any_english
+            
+            if selected_voice:
+                self.engine.setProperty('voice', selected_voice.id)
+                print(f"[TTS] Using pyttsx3 voice: {selected_voice.name}")
         
         # Adjust rate - slower is often clearer and less tinny
         rate = self.engine.getProperty('rate')
@@ -359,45 +419,108 @@ class AudioController(threading.Thread):
         self.engine.setProperty('volume', 1.0)
         
         # Try to improve quality by using better espeak parameters if available
-        # This is done via environment variables that espeak-ng respects
         os.environ.setdefault('ESPEAK_DATA_PATH', '/usr/share/espeak-ng-data')
+    
+    def _select_tts_engine(self) -> None:
+        """Select which TTS engine to use based on preference and availability.
+        
+        Determines whether to use Piper TTS or pyttsx3 based on user preference
+        and what's available on the system. Sets the use_piper flag accordingly.
+        """
+        piper_available = (self.piper_executable is not None and 
+                          self.piper_model_path is not None and 
+                          os.path.exists(self.piper_model_path))
+        
+        if self.tts_preference == "pyttsx3":
+            # User explicitly requested pyttsx3
+            self.use_piper = False
+            print("[TTS] Using pyttsx3 (user preference)")
+        elif self.tts_preference == "piper":
+            # User explicitly requested Piper
+            if piper_available:
+                self.use_piper = True
+                print(f"[TTS] Using Piper TTS: {os.path.basename(self.piper_model_path)}")
+            else:
+                self.use_piper = False
+                print("[TTS] Warning: Piper requested but not available, falling back to pyttsx3")
+                if not self.piper_executable:
+                    print("  Piper executable not found. See INSTALL_PIPER.md")
+                elif not self.piper_model_path or not os.path.exists(self.piper_model_path):
+                    print("  Piper model not configured. Set PIPER_MODEL_PATH environment variable")
+        else:
+            # Auto-detect: prefer Piper if available, otherwise pyttsx3
+            if piper_available:
+                self.use_piper = True
+                print(f"[TTS] Using Piper TTS: {os.path.basename(self.piper_model_path)}")
+            else:
+                self.use_piper = False
+                print("[TTS] Using pyttsx3 (Piper not available)")
 
     def play_mp3(self, path: str, duration: Optional[float] = None) -> None:
-        """Play an MP3 file using VLC on the ReSpeaker 4?Mic board.  
-        An optional ``duration`` limits playback time.
-
+        """Play an MP3 or WAV file using VLC on the ReSpeaker 4-Mic board.
+        
+        Args:
+            path: Path to the audio file (MP3 or WAV)
+            duration: Optional duration in seconds to limit playback time.
+                     If None, plays the entire file.
+        
         This implementation uses ALSA's ``plughw`` device rather than the raw
-        ``hw`` device.  The ``hw`` plugin presents the hardware without any
-        conversions, so if the audio file's sample rate, bit depth or channel
+        ``hw`` device. The ``hw`` plugin presents the hardware without any
+        conversions, so if the audio file's sample rate, bit depth, or channel
         count is not supported by the ReSpeaker's DAC, VLC will fail with
-        messages such as ``no supported sample format`` and ``failed to create
-        audio output``.  In contrast, the ``plughw`` wrapper employs the ALSA
+        messages such as "no supported sample format" and "failed to create
+        audio output". In contrast, the ``plughw`` wrapper employs the ALSA
         ``plug`` plugin, which automatically performs channel duplication,
-        sample?value conversion and resampling when necessary?208589852202690?L126-L134?.
-
-        We also pass ``--intf=dummy`` to suppress VLC's graphical interface and
-        set the volume to a moderate level (0?100) using
-        :py:meth:`vlc.MediaPlayer.audio_set_volume`?862939095569161?L1642-L1649?.
-        Finally, the player and instance are released to ensure the audio stops
-        and resources are freed when playback ends.
+        sample value conversion, and resampling when necessary.
+        
+        VLC is configured with ``--intf=dummy`` to suppress the graphical
+        interface, and the volume is set to 50% (0-100 scale) using
+        ``vlc.MediaPlayer.audio_set_volume()``. The player and instance are
+        released when playback ends to ensure resources are freed.
         """
         try:
-            if not os.path.exists(path):
-                print(f"Audio file '{path}' not found; skipping playback")
+            # Convert to absolute path to avoid any path resolution issues
+            abs_path = os.path.abspath(path)
+            if not os.path.exists(abs_path):
+                print(f"Audio file '{abs_path}' not found; skipping playback")
+                return
+            
+            # Verify file is readable and has content
+            if not os.access(abs_path, os.R_OK):
+                print(f"Audio file '{abs_path}' is not readable; skipping playback")
+                return
+            
+            file_size = os.path.getsize(abs_path)
+            if file_size == 0:
+                print(f"Audio file '{abs_path}' is empty; skipping playback")
                 return
 
             # Create a VLC instance and media player with ALSA output directed to ReSpeaker
             # Use the ALSA card number extracted from the device detection
             alsa_device = f'plughw:{respeaker_alsa_card},0' if respeaker_alsa_card else 'plughw:2,0'
             instance = vlc.Instance('--aout=alsa', f'--alsa-audio-device={alsa_device}', '--intf=dummy')
-            media = instance.media_new(path)
+            # Use absolute path for VLC
+            media = instance.media_new(abs_path)
             player = instance.media_player_new()
             player.set_media(media)
 
             # Reduce volume to 50%.  Volume is 0-100
             player.audio_set_volume(50)
 
+            # Give VLC a moment to initialize before playing
+            time.sleep(0.1)
             player.play()
+            
+            # Wait a moment for playback to actually start
+            time.sleep(0.2)
+            
+            # Verify playback started successfully
+            state = player.get_state()
+            if state == vlc.State.Error:
+                print(f"VLC playback error: failed to start playback of '{abs_path}'")
+                player.release()
+                instance.release()
+                return
 
             # If a duration is specified, play for that long; otherwise wait for the media to finish.
             if duration:
@@ -416,8 +539,12 @@ class AudioController(threading.Thread):
         except Exception as exc:
             print(f"Error playing MP3 '{path}': {exc}")
         
-    def speak_text(self, text: str):
-        """Speak the supplied text using the local TTS engine."""
+    def speak_text(self, text: str) -> None:
+        """Speak the supplied text using the local TTS engine.
+        
+        Args:
+            text: The text to speak
+        """
         try:
             print(f"Speaking: {text}")
             self.engine.say(text)
@@ -425,56 +552,129 @@ class AudioController(threading.Thread):
         except Exception as exc:
             print(f"Error during TTS: {exc}")
     
-    def generate_and_play_speech(self, text: str):
-        """Generate speech from text using Piper TTS (if available) or pyttsx3, save to WAV file, and play via VLC."""
-        import tempfile
+    def _generate_speech_with_piper(self, text: str, output_path: str) -> bool:
+        """Generate speech using Piper TTS.
+        
+        Args:
+            text: Text to convert to speech
+            output_path: Path where WAV file should be saved
+            
+        Returns:
+            True if successful, False otherwise
+        """
         try:
-            print(f"Generating speech for: '{text}'")
+            result = subprocess.run(
+                [self.piper_executable, "--model", self.piper_model_path, "--output_file", output_path],
+                input=text,
+                text=True,
+                capture_output=True,
+                timeout=30,
+                check=True
+            )
+            # Verify the file was created
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                return True
+            else:
+                raise FileNotFoundError("Piper did not generate output file")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            print(f"[TTS] Piper failed: {exc}")
+            return False
+    
+    def _generate_speech_with_pyttsx3(self, text: str, output_path: str) -> bool:
+        """Generate speech using pyttsx3.
+        
+        Args:
+            text: Text to convert to speech
+            output_path: Path where WAV file should be saved
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.engine.save_to_file(text, output_path)
+            self.engine.runAndWait()
+            return True
+        except Exception as exc:
+            print(f"[TTS] pyttsx3 failed: {exc}")
+            return False
+    
+    def _wait_for_audio_file(self, file_path: str, max_wait: float = 5.0) -> bool:
+        """Wait for audio file to be created and have content.
+        
+        Args:
+            file_path: Path to the audio file
+            max_wait: Maximum time to wait in seconds
+            
+        Returns:
+            True if file exists and has content, False otherwise
+        """
+        wait_interval = 0.1  # Check every 100ms
+        waited = 0.0
+        while waited < max_wait:
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path)
+                if file_size > 0:
+                    # File exists and has content, give it a moment to fully flush
+                    time.sleep(0.2)
+                    return True
+            time.sleep(wait_interval)
+            waited += wait_interval
+        return False
+    
+    def generate_and_play_speech(self, text: str) -> None:
+        """Generate speech from text using the selected TTS engine, save to WAV file, and play via VLC.
+        
+        Args:
+            text: The text to convert to speech and play
+            
+        The method creates a temporary WAV file, generates speech using either
+        Piper TTS or pyttsx3 (with automatic fallback), waits for the file to
+        be ready, plays it via VLC, and cleans up the temporary file.
+        """
+        import tempfile
+        temp_wav_path = None
+        try:
             # Create a temporary WAV file
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
                 temp_wav_path = tmp_file.name
             
-            # Try Piper TTS first if available and configured
-            if self.use_piper and self.piper_executable:
-                try:
-                    # Use piper command-line tool to generate WAV file
-                    # Piper reads text from stdin and outputs WAV to the specified file
-                    result = subprocess.run(
-                        [self.piper_executable, "--model", self.piper_model_path, "--output_file", temp_wav_path],
-                        input=text,
-                        text=True,
-                        capture_output=True,
-                        timeout=30,
-                        check=True
-                    )
-                    # Verify the file was created
-                    if os.path.exists(temp_wav_path) and os.path.getsize(temp_wav_path) > 0:
-                        print("Generated speech using Piper TTS (high quality)")
-                    else:
-                        raise FileNotFoundError("Piper did not generate output file")
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as piper_exc:
-                    print(f"Piper TTS failed, falling back to pyttsx3: {piper_exc}")
-                    # Fall through to pyttsx3
-                    self.use_piper = False
+            # Generate speech using the selected engine
+            success = False
+            if self.use_piper:
+                success = self._generate_speech_with_piper(text, temp_wav_path)
+                # Fall back to pyttsx3 if Piper fails
+                if not success:
+                    print("[TTS] Falling back to pyttsx3")
+                    success = self._generate_speech_with_pyttsx3(text, temp_wav_path)
+            else:
+                success = self._generate_speech_with_pyttsx3(text, temp_wav_path)
             
-            # Fall back to pyttsx3 if Piper not available or failed
-            if not self.use_piper:
-                # Generate speech and save to WAV file
-                self.engine.save_to_file(text, temp_wav_path)
-                self.engine.runAndWait()
+            if not success:
+                raise RuntimeError("Failed to generate speech")
             
-            # Play the generated WAV file using the existing play_mp3 method (VLC handles WAV too)
+            # Wait for file to be ready
+            if not self._wait_for_audio_file(temp_wav_path):
+                raise FileNotFoundError(f"Audio file was not created or is empty: {temp_wav_path}")
+            
+            # Play the generated WAV file using VLC
             self.play_mp3(temp_wav_path)
             
-            # Clean up temporary file
-            try:
-                os.unlink(temp_wav_path)
-            except Exception:
-                pass
         except Exception as exc:
             print(f"Error generating/playing speech: {exc}")
+        finally:
+            # Clean up temporary file
+            if temp_wav_path and os.path.exists(temp_wav_path):
+                try:
+                    os.unlink(temp_wav_path)
+                except Exception:
+                    pass
 
-    def run(self):
+    def run(self) -> None:
+        """Main thread loop that handles audio playback requests.
+        
+        Waits for audio events from the voice recognition thread and processes
+        them (speech generation, MP3 playback, etc.). Runs until stop_event is set.
+        """
         while not self.state.stop_event.is_set():
             # Wait for a signal from the voice recognition thread (with timeout to check stop_event)
             if self.state.audio_event.wait(timeout=0.5):
@@ -493,15 +693,25 @@ class AudioController(threading.Thread):
                         self.generate_and_play_speech(self.state.text_to_speak)
                     elif self.state.audio_type == "joke":
                         # Fetch a joke from GreenPT API and speak it
-                        joke = get_joke()
+                        joke = get_joke(previous_jokes=self.state.previous_jokes)
                         if joke:
+                            # Track this joke to avoid repetition
+                            self.state.previous_jokes.append(joke)
+                            # Keep only the last 10 jokes to avoid prompt bloat
+                            if len(self.state.previous_jokes) > 10:
+                                self.state.previous_jokes.pop(0)
                             self.generate_and_play_speech(joke)
                         else:
                             print("Failed to fetch joke from GreenPT API")
                     elif self.state.audio_type == "flatter":
                         # Fetch flattery from GreenPT API and speak it
-                        flattery = get_flattery()
+                        flattery = get_flattery(previous_flattery=self.state.previous_flattery)
                         if flattery:
+                            # Track this flattery to avoid repetition
+                            self.state.previous_flattery.append(flattery)
+                            # Keep only the last 10 flattery to avoid prompt bloat
+                            if len(self.state.previous_flattery) > 10:
+                                self.state.previous_flattery.pop(0)
                             self.generate_and_play_speech(flattery)
                         else:
                             print("Failed to fetch flattery from GreenPT API")
@@ -521,9 +731,22 @@ class AudioController(threading.Thread):
 # -----------------------------------------------------------------------------
 
 class VoiceRecognizer(threading.Thread):
-    """Thread that listens to the microphone and updates shared state."""
+    """Thread that listens to the microphone and updates shared state.
+    
+    This thread continuously captures audio from the microphone, processes it
+    through the Vosk speech recognition engine, and updates the shared state
+    when valid commands are recognized.
+    """
 
     def __init__(self, state: State):
+        """Initialize the voice recognition thread.
+        
+        Args:
+            state: Shared state object for inter-thread communication
+            
+        Raises:
+            RuntimeError: If the Vosk model is not found at MODEL_PATH
+        """
         super().__init__(daemon=True)
         self.state = state
         # Load the Vosk model.  This is an expensive operation and should be
@@ -550,18 +773,35 @@ class VoiceRecognizer(threading.Thread):
         # everything that follows (for generate).
         self.command_pattern = re.compile(r"christmas tree\s+(\w+)(?:\s+(.*))?")
 
-    def audio_callback(self, indata, frames, time_info, status):
+    def audio_callback(self, indata: Any, frames: int, time_info: Any, status: Any) -> None:
+        """Callback function for sounddevice audio stream.
+        
+        Args:
+            indata: Input audio data (numpy array)
+            frames: Number of frames
+            time_info: Timing information (dict)
+            status: Status flags (printed if present)
+            
+        This callback is called by sounddevice for each audio block. It converts
+        the audio data to bytes and pushes it to the queue for processing by
+        the main run() loop.
+        """
         if status:
             print(status)
         # Convert the recorded bytes to raw bytes and push them to the queue
         self.q.put(bytes(indata))
 
-    def run(self):
-        # Determine the default sample rate.  Vosk requires 16 kHz, but
+    def run(self) -> None:
+        """Main thread loop that processes audio and recognizes commands.
+        
+        Continuously captures audio from the microphone, processes it through
+        Vosk speech recognition, and calls process_command() when valid
+        utterances are recognized. Runs until stop_event is set.
+        """
+        # Determine the default sample rate.  Vosk requires 16 kHz, but
         # sounddevice will resample automatically if needed.
         device_info = sd.query_devices(sd.default.device[0], 'input')
         samplerate = int(device_info['default_samplerate'])
-        print(f"Initialising audio input at {samplerate} Hz (device {sd.default.device[0]})")
         # Start the microphone stream
         with sd.RawInputStream(samplerate=samplerate,
                                blocksize = 8000,
@@ -585,57 +825,55 @@ class VoiceRecognizer(threading.Thread):
                     # Timeout allows checking stop_event
                     continue
 
-    def process_command(self, utterance: str):
-        """Interpret a recognised utterance and update the shared state."""
-        print(f"Recognised utterance: '{utterance}'")
+    def process_command(self, utterance: str) -> None:
+        """Interpret a recognised utterance and update the shared state.
+        
+        Args:
+            utterance: The recognized speech text (lowercase)
+            
+        Parses the utterance to extract the command and updates the shared
+        state accordingly. Commands can change lighting modes, trigger audio
+        playback, or request AI-generated content.
+        """
         m = self.command_pattern.match(utterance)
         if not m:
-            print("Utterance does not match command pattern; ignoring")
             return
         command = m.group(1).lower()
         rest = m.group(2) or ""
         # Handle colour commands
         if command in SUPPORTED_COLOURS:
-            print(f"Setting mode to colour '{command}'")
             self.state.mode = command
             return
         # Disco and phase modes
         if command in ["disco", "phase"]:
-            print(f"Setting mode to '{command}'")
             self.state.mode = command
             return
         # Speak: play the bundled MP3
         if command == "speak":
-            print("Preparing to play bundled speech")
             self.state.audio_type = "speak"
             self.state.audio_event.set()
             return
         # Sing: play the configured song
         if command == "sing":
-            print("Preparing to play the configured song")
             self.state.audio_type = "sing"
             self.state.audio_event.set()
             return
-        # Generate: use pyttsx3 to generate speech and play via VLC
+        # Generate: use TTS to generate speech and play via VLC
         if command == "generate":
-            print("Preparing to generate speech using pyttsx3")
             self.state.text_to_speak = DEFAULT_GENERATE_TEXT
             self.state.audio_type = "generate"
             self.state.audio_event.set()
             return
         # Joke: fetch a joke from GreenPT API and speak it
         if command == "joke":
-            print("Preparing to fetch and speak a joke")
             self.state.audio_type = "joke"
             self.state.audio_event.set()
             return
         # Flatter: fetch flattery from GreenPT API and speak it
         if command == "flatter":
-            print("Preparing to fetch and speak flattery")
             self.state.audio_type = "flatter"
             self.state.audio_event.set()
             return
-        print(f"Unrecognised command '{command}'; ignoring")
 
 
 # -----------------------------------------------------------------------------
@@ -644,12 +882,38 @@ class VoiceRecognizer(threading.Thread):
 
 def main() -> int:
     """Entry point for the offline voice‑controlled Christmas tree."""
+    parser = argparse.ArgumentParser(
+        description="Offline voice-controlled Christmas tree",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+TTS Engine Options:
+  auto      - Auto-detect (prefer Piper if available, otherwise pyttsx3) [default]
+  piper     - Use Piper TTS (requires PIPER_MODEL_PATH environment variable)
+  pyttsx3   - Use pyttsx3 (espeak backend)
+
+Examples:
+  %(prog)s                    # Auto-detect TTS engine
+  %(prog)s --tts-engine piper  # Force Piper TTS
+  %(prog)s --tts-engine pyttsx3  # Force pyttsx3
+        """
+    )
+    parser.add_argument(
+        '--tts-engine',
+        choices=['auto', 'piper', 'pyttsx3'],
+        default='auto',
+        help='TTS engine to use (default: auto)'
+    )
+    args = parser.parse_args()
+    
+    # Convert 'auto' to None for AudioController
+    tts_preference = None if args.tts_engine == 'auto' else args.tts_engine
+    
     print("Starting offline voice‑controlled Christmas tree…")
     # Instantiate the hardware tree.  Set brightness to a reasonable default.
     tree = RGBXmasTree(brightness=0.1)
     # Create and start the worker threads
     led_thread = XmasTreeController(tree, STATE)
-    audio_thread = AudioController(STATE)
+    audio_thread = AudioController(STATE, tts_preference=tts_preference)
     voice_thread = VoiceRecognizer(STATE)
     led_thread.start()
     audio_thread.start()
