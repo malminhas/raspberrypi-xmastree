@@ -31,9 +31,9 @@
 #
 
 from tree import RGBXmasTree
-from colorzero import Color, Hue
+from colorzero import Color, Hue # type: ignore
 from time import sleep
-from random import random
+from random import random # type: ignore
 
 # LED number for star at the top of the tree
 STAR = 3

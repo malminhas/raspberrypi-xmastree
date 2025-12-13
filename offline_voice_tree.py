@@ -3,16 +3,16 @@
 offline_voice_tree.py
 =====================
 
-A modern, offline alternative to the voice‑controlled Christmas tree from the
-original `raspberrypi‑xmastree` project.  This version runs entirely on
-the Raspberry Pi without any internet connectivity or AWS services.  It uses
-Vosk for offline speech recognition and pyttsx3 for local text‑to‑speech (TTS),
+A modern, offline alternative to the voice-controlled Christmas tree from the
+original `raspberrypi-xmastree` project.  This version runs entirely on
+the Raspberry Pi without any internet connectivity or AWS services.  It uses
+Vosk for offline speech recognition and pyttsx3 for local text-to-speech (TTS),
 so your festive light show continues to work even when your network is down.
 
 Key features
 ------------
 
-* Real‑time command recognition using the microphone connected to the Pi.
+* Real-time command recognition using the microphone connected to the Pi.
   Commands follow the pattern “christmas tree <command>”.  Supported
   commands include single colours (red, green, blue, yellow, orange, purple,
   white, pink, brown, black), “disco” (randomised colour cycling), and
@@ -22,10 +22,10 @@ Key features
   file or a configured default message.  “christmas tree generate <text>”
   generates speech from the provided text using the local TTS engine.
 * An optional “sing” command which plays a provided music file (for
-  example, “I Wish It Could Be Christmas Every Day”).
-* AI‑powered entertainment commands (optional, requires GreenPT API):
-  "christmas tree joke" fetches and speaks a family‑friendly joke, while
-  "christmas tree flatter" generates and speaks over‑the‑top humorous praise.
+  example, “I Wish It Could Be Christmas Every Day”).
+* AI-powered entertainment commands (optional, requires GreenPT API):
+  "christmas tree joke" fetches and speaks a family-friendly joke, while
+  "christmas tree flatter" generates and speaks over-the-top humorous praise.
   These commands require internet connectivity and an API key but gracefully
   degrade if unavailable.
 * Cooperative multitasking via Python threads: a background thread handles
@@ -42,12 +42,22 @@ import json
 import os
 import queue
 import re
-import requests
 import threading
 import time
 from pathlib import Path
 from typing import Optional  # for type hints compatible with Python < 3.10
 
+from colorzero import Color, Hue # type: ignore
+from tree import RGBXmasTree  # Hardware driver for PiHut’s 3D Xmas tree
+# Import Vosk for offline speech recognition.  A small, local model (~50 MB)
+# must be downloaded separately; specify its directory via MODEL_PATH below.
+from vosk import Model, KaldiRecognizer # type: ignore
+# Import pyttsx3 for offline text‑to‑speech.  This uses the on‑board speech
+# engine on Linux (espeak) or other operating systems.
+import pyttsx3 # type: ignore
+# Optional: use VLC for MP3 playback.  Install via apt (`sudo apt install vlc`)
+# and install the python bindings (`pip install python‑vlc`) if needed.
+import vlc # type: ignore
 import sounddevice as sd  # Used to capture audio from the microphone # type: ignore
 
 # Query all available devices
@@ -77,22 +87,6 @@ else:
 
 # Set a fixed sample rate (Vosk models typically use 16 kHz)
 sd.default.samplerate = 16000
-
-from colorzero import Color, Hue
-from tree import RGBXmasTree  # Hardware driver for PiHut’s 3D Xmas tree
-
-# Import Vosk for offline speech recognition.  A small, local model (~50 MB)
-# must be downloaded separately; specify its directory via MODEL_PATH below.
-from vosk import Model, KaldiRecognizer # type: ignore
-
-# Import pyttsx3 for offline text‑to‑speech.  This uses the on‑board speech
-# engine on Linux (espeak) or other operating systems.
-import pyttsx3 # type: ignore
-
-# Optional: use VLC for MP3 playback.  Install via apt (`sudo apt install vlc`)
-# and install the python bindings (`pip install python‑vlc`) if needed.
-import vlc # type: ignore
-
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -128,80 +122,8 @@ SING_MP3_PATH = str(Path(__file__).parent / "08-I-Wish-it-Could-be-Christmas-Eve
 # Default text to speak when "generate" command is used (since grammar prevents capturing text)
 DEFAULT_GENERATE_TEXT = "Hello everyone, this is your Christmas tree talking"
 
-# GreenPT API configuration for joke and flatter commands
-GREENPT_API_BASE_URL = os.environ.get("GREENPT_API_BASE_URL", "https://api.greenpt.example.com/v1")
-GREENPT_API_KEY = os.environ.get("GREENPT_API_KEY", "")
-GREENPT_MODEL_ID = os.environ.get("GREENPT_MODEL_ID", "gpt-4o-mini")
-
-# -----------------------------------------------------------------------------
-# GreenPT API helper functions
-# -----------------------------------------------------------------------------
-
-def call_greenpt_api(prompt: str, max_tokens: int = 150) -> Optional[str]:
-    """
-    Call the GreenPT API with the given prompt and return the generated text.
-    Returns None if the API call fails or if the API key is not configured.
-    """
-    if not GREENPT_API_KEY:
-        print("GreenPT API key not configured. Set GREENPT_API_KEY environment variable.")
-        return None
-
-    try:
-        url = f"{GREENPT_API_BASE_URL}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {GREENPT_API_KEY}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": GREENPT_MODEL_ID,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens,
-            "temperature": 0.7,
-        }
-
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        response.raise_for_status()
-
-        result = response.json()
-        # Extract the generated text from the response
-        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-        return content.strip() if content else None
-
-    except requests.exceptions.Timeout:
-        print("GreenPT API request timed out")
-        return None
-    except requests.exceptions.RequestException as exc:
-        print(f"GreenPT API request failed: {exc}")
-        return None
-    except Exception as exc:
-        print(f"Unexpected error calling GreenPT API: {exc}")
-        return None
-
-
-def get_joke() -> Optional[str]:
-    """
-    Request a family-friendly joke from the GreenPT API.
-    Returns the joke text or None if the request fails.
-    """
-    prompt = (
-        "Tell me a short, tasteful, family-friendly joke suitable for a Christmas "
-        "gathering. Keep it under 50 words and make it festive if possible."
-    )
-    return call_greenpt_api(prompt, max_tokens=100)
-
-
-def get_flattery() -> Optional[str]:
-    """
-    Request over-the-top ostentatiously sycophantic praise from the GreenPT API.
-    Returns the flattery text or None if the request fails.
-    """
-    prompt = (
-        "Generate an over-the-top, ostentatiously sycophantic praise for someone "
-        "in a humorous way. Make it ridiculously flattering and amusing. Keep it "
-        "under 50 words."
-    )
-    return call_greenpt_api(prompt, max_tokens=100)
+# Import GreenPT API functions from the dedicated module
+from greenpt import get_joke, get_flattery
 
 
 # -----------------------------------------------------------------------------
@@ -408,7 +330,7 @@ class AudioController(threading.Thread):
             player = instance.media_player_new()
             player.set_media(media)
 
-            # Reduce volume to 50%.  Volume is 0?100 [oai_citation:1?olivieraubert.net](https://www.olivieraubert.net/vlc/python-ctypes/doc/vlc.MediaPlayer-class.html#:~:text=Set%20current%20software%20audio%20volume).
+            # Reduce volume to 50%.  Volume is 0-100
             player.audio_set_volume(50)
 
             player.play()
