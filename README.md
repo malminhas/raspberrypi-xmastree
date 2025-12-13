@@ -2,11 +2,13 @@
 
 ## Introduction
 
-This repository contains experiments with PiHut's [3D Xmas Tree](https://thepihut.com/products/3d-xmas-tree-for-raspberry-pi). The project includes three main scripts:
+This repository contains experiments with PiHut's [3D Xmas Tree](https://thepihut.com/products/3d-xmas-tree-for-raspberry-pi). For detailed architecture documentation of the offline voice-controlled system, see [ARCHITECTURE.md](ARCHITECTURE.md). For development guidance, see [CLAUDE.md](CLAUDE.md).
+
+The project includes three main scripts:
 
 * **[`my-tree.py`](my-tree.py)**: A simple disco tree that gently pulses through different hues in a slow, colorful pattern. The LEDs [cycle through colors](https://media.giphy.com/media/1Q0XQeQE6fUTOgdEQn/giphy-downsized-large.gif) in a variable pattern that can't be changed.
 
-* **[`my-voice-tree.py`](my-voice-tree.py)**: A cloud-based voice-controlled tree that uses AWS Transcribe and Polly for speech recognition and synthesis. You can change the lights by speaking commands like "christmas tree blue|red|green|white", "christmas tree phase" to cycle through LED hues, or "christmas tree disco" to revert to the disco pattern. The tree can also speak using "christmas tree speak" or "christmas tree generate" (both play the `speech.mp3` file). See it in action [here](https://youtu.be/YopBvuAIyBU).  Note that running this script over an extended period can be expensive.
+* **[`my-voice-tree.py`](my-voice-tree.py)**: A cloud-based voice-controlled tree that uses AWS Transcribe for speech recognition. You can change the lights by speaking commands like "christmas tree blue|red|green|white", "christmas tree phase" to cycle through LED hues, or "christmas tree disco" to revert to the disco pattern. The tree can also speak using "christmas tree speak" (plays the `speech.mp3` file) or "christmas tree generate" (plays the `speech.mp3` file). See it in action [here](https://youtu.be/YopBvuAIyBU).  Note that running this script over an extended period can be expensive.
 
 * **[`offline_voice_tree.py`](offline_voice_tree.py)**: A modern, **offline alternative** that runs entirely on the Raspberry Pi without any internet connectivity or AWS services. Uses [Vosk](https://alphacephei.com/vosk/models) for offline speech recognition and `pyttsx3` for local text-to-speech, so your festive light show works without requiring a network connection or incurring AWS charges. Perfect for standalone installations or when you want to avoid cloud dependencies.
 
@@ -63,6 +65,12 @@ $ python3 -m venv --system-site-packages ~/.virtualenvs/xmastree
 $ source ~/.virtualenvs/xmastree/bin/activate
 # Or if using virtualenvwrapper:
 $ workon xmastree
+```
+
+Install base dependencies:
+
+```bash
+(xmastree) $ pip install -r requirements.txt
 ```
 
 You should now be able to test the basic tree:
@@ -142,9 +150,8 @@ graph LR
 
 * **Voice commands**: Control the tree with natural speech ("christmas tree red", "christmas tree disco", etc.)
 * **AWS Transcribe**: Real-time speech-to-text conversion
-* **AWS Polly**: Text-to-speech synthesis for custom messages
 * **Multiple modes**: Solid colors, disco, phase cycling
-* **Audio playback**: Play MP3 files and generate speech
+* **Audio playback**: Play MP3 files via voice commands
 * **Requires internet connectivity** for AWS services
 
 ### Installation
@@ -232,7 +239,7 @@ graph TB
 * **Colors**: `christmas tree red|green|blue|yellow|orange|purple|white|pink|brown|black`
 * **Modes**: `christmas tree disco|phase`
 * **Audio**: `christmas tree speak` (plays `speech.mp3` file)
-* **Audio**: `christmas tree generate` (plays `speech.mp3` file)
+* **Audio**: `christmas tree generate` (generates speech using default text)
 * **Music**: `christmas tree sing` (plays configured song)
 
 ---
@@ -344,7 +351,7 @@ All threads share a `State` object for coordination and use `threading.Event` fo
 * **Colors**: `christmas tree red|green|blue|yellow|orange|purple|white|pink|brown|black`
 * **Modes**: `christmas tree disco|phase`
 * **Audio**: `christmas tree speak` (plays `speech.mp3` file)
-* **Audio**: `christmas tree generate` (plays `speech.mp3` file)
+* **Audio**: `christmas tree generate` (generates speech using pyttsx3 TTS engine)
 * **Music**: `christmas tree sing` (plays configured song from `08-I-Wish-it-Could-be-Christmas-Everyday.mp3`)
 
 ### Audio Playback
@@ -436,7 +443,7 @@ The offline version is ideal for standalone installations where network connecti
 |---------|-----------------|----------------------|
 | Internet Required | ✅ Yes | ❌ No |
 | Speech Recognition | AWS Transcribe | Vosk (local) |
-| Text-to-Speech | AWS Polly | pyttsx3 (espeak-ng) |
+| Audio Playback | MP3 files | MP3 + pyttsx3 TTS |
 | Setup Complexity | Higher (AWS config) | Lower (model download) |
 | Cost | Pay-per-use AWS | Free (one-time model) |
 | Latency | Network dependent | Local (faster) |
