@@ -414,8 +414,8 @@ def test_set_model() -> bool:
             pass
     
     try:
-        # Test setting a valid model
-        test_model = "gpt-4o-mini"
+        # Test setting a valid GreenPT model
+        test_model = "green-s"
         if not set_model(test_model):
             print(f"  ❌ FAILED: set_model('{test_model}') returned False")
             return False
@@ -434,8 +434,8 @@ def test_set_model() -> bool:
             print(f"  ❌ FAILED: Model file content incorrect. Expected '{test_model}', got '{file_content}'")
             return False
         
-        # Test setting another model
-        test_model2 = "gpt-4"
+        # Test setting another GreenPT model
+        test_model2 = "gemma-3-27b-it"
         if not set_model(test_model2):
             print(f"  ❌ FAILED: set_model('{test_model2}') returned False")
             return False
