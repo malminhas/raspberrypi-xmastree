@@ -123,8 +123,9 @@ SING_MP3_PATH = str(Path(__file__).parent / "08-I-Wish-it-Could-be-Christmas-Eve
 # Default text to speak when "generate" command is used (since grammar prevents capturing text)
 DEFAULT_GENERATE_TEXT = "Hello everyone, this is your Christmas tree talking"
 
-# Import GreenPT API functions from the dedicated module
-from greenpt import get_joke, get_flattery
+# LLM provider functions - will be set at runtime based on command line argument
+get_joke = None
+get_flattery = None
 
 
 # -----------------------------------------------------------------------------
@@ -974,10 +975,15 @@ TTS Engine Options:
   piper     - Use Piper TTS (requires PIPER_MODEL_PATH environment variable)
   pyttsx3   - Use pyttsx3 (espeak backend)
 
+LLM Provider Options:
+  greenpt   - Use GreenPT API (requires GREENPT_API_KEY environment variable) [default]
+  ollama    - Use local Ollama (requires Ollama running: ollama serve)
+
 Examples:
-  %(prog)s                    # Auto-detect TTS engine
+  %(prog)s                    # Auto-detect TTS engine, use GreenPT
   %(prog)s --tts-engine piper  # Force Piper TTS
   %(prog)s --tts-engine pyttsx3  # Force pyttsx3
+  %(prog)s --llm-provider ollama  # Use local Ollama instead of GreenPT
         """
     )
     parser.add_argument(
@@ -986,10 +992,25 @@ Examples:
         default='auto',
         help='TTS engine to use (default: auto)'
     )
+    parser.add_argument(
+        '--llm-provider',
+        choices=['greenpt', 'ollama'],
+        default='greenpt',
+        help='LLM provider for joke and flattery commands (default: greenpt)'
+    )
     args = parser.parse_args()
-    
+
     # Convert 'auto' to None for AudioController
     tts_preference = None if args.tts_engine == 'auto' else args.tts_engine
+
+    # Import the appropriate LLM provider module
+    global get_joke, get_flattery
+    if args.llm_provider == 'ollama':
+        from ollama import get_joke, get_flattery
+        print(f"Using Ollama for LLM features (joke, flatter)")
+    else:
+        from greenpt import get_joke, get_flattery
+        print(f"Using GreenPT for LLM features (joke, flatter)")
     
     print("Starting offline voice‑controlled Christmas tree…")
     # Instantiate the hardware tree.  Set brightness to a reasonable default.
