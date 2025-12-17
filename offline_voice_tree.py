@@ -107,7 +107,7 @@ SUPPORTED_COLOURS = [
 ]
 
 # Commands other than colours
-SUPPORTED_COMMANDS = ["disco", "phase", "speak", "generate", "sing", "joke", "flatter"]
+SUPPORTED_COMMANDS = ["disco", "phase", "speak", "generate", "sing", "joke", "flatter", "gb"]
 
 # Length (in seconds) to wait while playing the bundled MP3 via “speak”.
 DEFAULT_SPEECH_DURATION = 10
@@ -236,6 +236,20 @@ class XmasTreeController(threading.Thread):
             for led in range(25):
                 self.tree[led].color = Color(random.choice(colors))
             self.tree[self.star_index].color = Color('white')
+        elif self.state.mode.lower() == "geebee":
+            # GB flag pattern: Union Jack approximation with red, white, and blue
+            # Pattern approximates the Union Jack with red crosses on blue/white background
+            # 5x5 grid: center is red (cross intersection), diagonals suggest flag design
+            gb_pattern = [
+                'blue', 'white', 'red', 'white', 'blue',    # Row 1 (top)
+                'white', 'blue', 'red', 'blue', 'white',    # Row 2
+                'red', 'red', 'red', 'red', 'red',          # Row 3 (middle - horizontal red cross)
+                'white', 'blue', 'red', 'blue', 'white',    # Row 4
+                'blue', 'white', 'red', 'white', 'blue'     # Row 5 (bottom)
+            ]
+            for led in range(25):
+                self.tree[led].color = Color(gb_pattern[led])
+            self.tree[self.star_index].color = Color('white')
 
         try:
             while not self.state.stop_event.is_set():
@@ -275,6 +289,18 @@ class XmasTreeController(threading.Thread):
                             colors = ['red', 'green', 'blue', 'yellow', 'orange', 'purple', 'white', 'pink']
                             for led in range(25):
                                 self.tree[led].color = Color(random.choice(colors))
+                            self.tree[self.star_index].color = Color('white')
+                        elif mode == "geebee":
+                            # GB flag pattern: Union Jack approximation
+                            gb_pattern = [
+                                'blue', 'white', 'red', 'white', 'blue',
+                                'white', 'blue', 'red', 'blue', 'white',
+                                'red', 'red', 'red', 'red', 'red',
+                                'white', 'blue', 'red', 'blue', 'white',
+                                'blue', 'white', 'red', 'white', 'blue'
+                            ]
+                            for led in range(25):
+                                self.tree[led].color = Color(gb_pattern[led])
                             self.tree[self.star_index].color = Color('white')
                         self.current_mode = mode
                     if mode == "disco":
@@ -327,6 +353,19 @@ class XmasTreeController(threading.Thread):
                             self.tree[self.star_index].color = Color('white')
                         else:
                             self.tree[self.star_index].color = Color('gray')
+                    elif mode == "geebee":
+                        # GB flag pattern: static Union Jack approximation
+                        # Pattern remains static (no animation needed for flag)
+                        gb_pattern = [
+                            'blue', 'white', 'red', 'white', 'blue',
+                            'white', 'blue', 'red', 'blue', 'white',
+                            'red', 'red', 'red', 'red', 'red',
+                            'white', 'blue', 'red', 'blue', 'white',
+                            'blue', 'white', 'red', 'white', 'blue'
+                        ]
+                        for led in range(25):
+                            self.tree[led].color = Color(gb_pattern[led])
+                        self.tree[self.star_index].color = Color('white')
                 except (AttributeError, RuntimeError) as e:
                     # GPIO has been closed, exit gracefully
                     if "NoneType" in str(e) or "off" in str(e).lower():
@@ -913,6 +952,10 @@ class VoiceRecognizer(threading.Thread):
         if command == "flatter":
             self.state.audio_type = "flatter"
             self.state.audio_event.set()
+            return
+        # GB: display GB flag pattern
+        if command == "gb":
+            self.state.mode = "geebee"
             return
 
 
