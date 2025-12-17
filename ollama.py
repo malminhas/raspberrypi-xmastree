@@ -24,7 +24,7 @@ import requests  # type: ignore
 
 # Ollama API configuration - can be overridden via environment variables
 API_BASE_URL = os.environ.get("OLLAMA_API_BASE_URL", "http://localhost:11434")
-DEFAULT_MODEL_ID = os.environ.get("OLLAMA_MODEL_ID", "llama3.2:3b")
+DEFAULT_MODEL_ID = os.environ.get("OLLAMA_MODEL_ID", "gemma2:2b")
 
 # Path to file storing the selected model (for persistence across sessions)
 MODEL_STORAGE_FILE = Path(__file__).parent / "selected_ollama_model.txt"
