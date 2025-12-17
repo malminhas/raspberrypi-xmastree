@@ -93,8 +93,9 @@ C4Container
         ContainerDb(sharedState, "Shared State", "Python State Object", "Synchronizes mode, audio events, and text between threads")
 
         Container(voskModel, "Vosk Speech Model", "Binary Model Files", "Offline speech recognition model (~50MB)")
-        
-        Container_Ext(greenptAPI, "GreenPT API", "HTTP REST API", "Optional LLM API for joke/flattery generation")
+
+        Container_Ext(greenptAPI, "GreenPT API", "HTTP REST API", "Optional cloud LLM API for joke/flattery generation")
+        Container_Ext(ollamaAPI, "Ollama API", "HTTP REST API", "Optional local LLM API for joke/flattery generation")
     }
 
     System_Ext(microphone, "ReSpeaker USB Mic", "USB audio device")
@@ -111,8 +112,10 @@ C4Container
 
     Rel(sharedState, audioThread, "Signals", "Audio events")
     Rel(audioThread, speaker, "Plays", "ALSA/VLC")
-    Rel(audioThread, greenptAPI, "Requests", "joke/flattery (optional)")
+    Rel(audioThread, greenptAPI, "Requests", "joke/flattery (optional, cloud)")
+    Rel(audioThread, ollamaAPI, "Requests", "joke/flattery (optional, local)")
     Rel(greenptAPI, audioThread, "Returns", "Generated content")
+    Rel(ollamaAPI, audioThread, "Returns", "Generated content")
     Rel(speaker, user, "Audio feedback")
     Rel(leds, user, "Visual feedback")
 
@@ -207,7 +210,7 @@ C4Component
         Component(piperTTS, "Piper TTS", "subprocess", "High-quality neural TTS (optional)")
         Component(pyttsx3Engine, "pyttsx3 Engine", "pyttsx3", "Fallback TTS using espeak-ng")
         Component(wavGenerator, "WAV Generator", "tempfile + TTS", "Creates temporary WAV files")
-        Component(greenptClient, "GreenPT Client", "greenpt.py", "Fetches jokes/flattery from API")
+        Component(llmClient, "LLM Client", "greenpt.py or ollama.py", "Fetches jokes/flattery from selected LLM provider")
         Component(modeManager, "Mode Manager", "Python Logic", "Switches to idle mode during playback")
     }
 
@@ -215,16 +218,19 @@ C4Component
     System_Ext(speaker, "Audio Output")
 
     System_Ext(greenptAPI, "GreenPT API")
+    System_Ext(ollamaAPI, "Ollama API")
     
     Rel(sharedState, eventListener, "Signals", "Audio events")
     Rel(eventListener, modeManager, "Triggers", "Mode switch")
     Rel(eventListener, audioRouter, "Activates")
     Rel(audioRouter, mp3Player, "Routes", "speak/sing")
     Rel(audioRouter, wavGenerator, "Routes", "generate/joke/flatter")
-    Rel(audioRouter, greenptClient, "Routes", "joke/flatter")
-    Rel(greenptClient, greenptAPI, "HTTP POST", "API requests")
-    Rel(greenptAPI, greenptClient, "Returns", "Generated text")
-    Rel(greenptClient, wavGenerator, "Provides", "Text content")
+    Rel(audioRouter, llmClient, "Routes", "joke/flatter")
+    Rel(llmClient, greenptAPI, "HTTP POST", "API requests (if GreenPT selected)")
+    Rel(llmClient, ollamaAPI, "HTTP POST", "API requests (if Ollama selected)")
+    Rel(greenptAPI, llmClient, "Returns", "Generated text")
+    Rel(ollamaAPI, llmClient, "Returns", "Generated text")
+    Rel(llmClient, wavGenerator, "Provides", "Text content")
     Rel(wavGenerator, ttsEngine, "Uses", "TTS synthesis")
     Rel(ttsEngine, piperTTS, "Falls back to", "If Piper available")
     Rel(ttsEngine, pyttsx3Engine, "Uses", "Default/fallback")
@@ -265,7 +271,7 @@ C4Component
 | TTS Engine | Text string | Spoken audio | Selects Piper TTS or pyttsx3 based on availability/preference |
 | Piper TTS | Text string | WAV file | High-quality neural TTS via subprocess |
 | pyttsx3 Engine | Text string | Spoken audio | espeak-ng backend with English voice selection |
-| GreenPT Client | Command type | Generated text | Fetches jokes/flattery with session-based repetition avoidance |
+| LLM Client | Command type | Generated text | Fetches jokes/flattery from GreenPT (cloud) or Ollama (local) with session-based repetition avoidance |
 | WAV Generator | Text string | Temporary file | TTS generation + play_mp3() + cleanup |
 | Mode Manager | Playback start/end | Mode changes | Sets idle mode, restores last_mode after playback |
 
@@ -344,6 +350,15 @@ classDiagram
         +list_models(): Optional[List[Dict]]
     }
 
+    class Ollama {
+        +get_joke(previous_jokes: Optional[List[str]]): Optional[str]
+        +get_flattery(previous_flattery: Optional[List[str]]): Optional[str]
+        +infer(prompt: str, max_tokens: int, temperature: float): Optional[str]
+        +get_model(): str
+        +set_model(model_id: str): bool
+        +list_models(): Optional[List[Dict]]
+    }
+
     class RGBXmasTree {
         -list~Pixel~ _all
         -list~tuple~ _value
@@ -369,7 +384,8 @@ classDiagram
     State <-- VoiceRecognizer : reads/writes
     State <-- XmasTreeController : reads
     State <-- AudioController : reads/writes
-    AudioController --> GreenPT : uses
+    AudioController --> GreenPT : uses (if selected)
+    AudioController --> Ollama : uses (if selected)
     RGBXmasTree *-- Pixel : contains 25
     XmasTreeController o-- RGBXmasTree : controls
     VoiceRecognizer : threading.Thread
@@ -717,7 +733,50 @@ self.state.mode = self.state.last_mode
 - Introduces external dependency (can be disabled via missing API key)
 - Session tracking uses memory (limited to last 10 entries per type)
 
-### 7. Piper TTS Integration for High-Quality Speech
+### 7. Dual LLM Provider Support (GreenPT and Ollama)
+
+**Decision**: Support both GreenPT (cloud) and Ollama (local) LLM providers with runtime selection via command-line parameter
+
+**Rationale**:
+- Provides flexibility between cloud-based and fully local LLM inference
+- Ollama enables offline operation with local models (no internet required for AI features)
+- GreenPT offers access to larger, more capable models via API
+- Identical interface (get_joke, get_flattery, infer) allows seamless switching
+- User can choose based on privacy needs, cost, and connectivity
+
+**Implementation** (`offline_voice_tree.py:main()`):
+- `--llm-provider` command-line argument with choices `['greenpt', 'ollama']`
+- Dynamic import of selected module at runtime
+- Both modules (`greenpt.py` and `ollama.py`) implement identical API
+- Model persistence: Each provider stores selected model separately
+- Default: GreenPT for backward compatibility
+
+**Command-Line Interface**:
+- `--llm-provider greenpt`: Use GreenPT cloud API (default)
+- `--llm-provider ollama`: Use local Ollama server
+
+**Configuration**:
+- **Ollama**: `OLLAMA_API_BASE_URL` (default: `http://localhost:11434`), `OLLAMA_MODEL_ID` (default: `llama3.2:3b`)
+- **GreenPT**: `GREENPT_API_BASE_URL`, `GREENPT_API_KEY`, `GREENPT_MODEL_ID`
+
+**Module Implementations**:
+- `ollama.py`: Local Ollama API client (HTTP requests to local server)
+- `greenpt.py`: Cloud GreenPT API client (HTTP requests with authentication)
+- Both support: `list_models()`, `get_model()`, `set_model()`, `infer()`, `get_joke()`, `get_flattery()`
+- Session-based repetition avoidance implemented in both
+
+**Error Handling**:
+- Ollama not running → Connection error, operation skipped
+- GreenPT missing API key → Warning printed, operation skipped
+- Network timeout → Error logged, LEDs restore to previous mode
+
+**Trade-offs**:
+- Ollama requires running local server (`ollama serve`) and model downloads (2-8GB per model)
+- GreenPT requires internet connectivity and API key (may incur costs)
+- Ollama inference may be slower on Raspberry Pi (depending on model size)
+- Both require session tracking memory (limited to last 10 entries)
+
+### 8. Piper TTS Integration for High-Quality Speech
 
 **Decision**: Support optional Piper TTS alongside pyttsx3 for improved speech quality
 
@@ -1010,9 +1069,11 @@ flowchart TD
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `VOSK_MODEL_PATH` | `./model` | Path to Vosk speech recognition model directory |
-| `GREENPT_API_BASE_URL` | `https://api.greenpt.example.com/v1` | Base URL for GreenPT API |
-| `GREENPT_API_KEY` | `""` (empty) | Authentication key for GreenPT API (required for joke/flatter commands) |
+| `GREENPT_API_BASE_URL` | `https://api.greenpt.ai/v1` | Base URL for GreenPT API (cloud LLM provider) |
+| `GREENPT_API_KEY` | `""` (empty) | Authentication key for GreenPT API (required for joke/flatter commands with GreenPT) |
 | `GREENPT_MODEL_ID` | `gemma-3-27b-it` | Model ID to use for GreenPT API requests |
+| `OLLAMA_API_BASE_URL` | `http://localhost:11434` | Base URL for Ollama API (local LLM provider) |
+| `OLLAMA_MODEL_ID` | `llama3.2:3b` | Model ID to use for Ollama API requests |
 
 ### Constants (offline_voice_tree.py:91-124)
 
@@ -1022,6 +1083,7 @@ flowchart TD
 | `SUPPORTED_COLOURS` | `["red", "green", "blue", ...]` | 10 recognized colors |
 | `SUPPORTED_COMMANDS` | `["disco", "phase", "speak", "generate", "sing", "joke", "flatter"]` | Non-color commands |
 | TTS engine selection | Command-line `--tts-engine` argument | "auto", "piper", or "pyttsx3" |
+| LLM provider selection | Command-line `--llm-provider` argument | "greenpt" (default) or "ollama" |
 | `DEFAULT_SPEECH_DURATION` | `10` | Seconds to play speech.mp3 |
 | `SPEECH_MP3_PATH` | `./speech.mp3` | Audio file for "speak" command |
 | `SING_MP3_PATH` | `./08-I-Wish-it-Could-be-Christmas-Everyday.mp3` | Song for "sing" command |
@@ -1245,20 +1307,24 @@ python /home/pi/Desktop/CODE/raspberrypi-xmastree/offline_voice_tree.py
 
 ### Source Files
 
-- `offline_voice_tree.py` (lines 1-939): Main application
-- `greenpt.py` (lines 1-574): GreenPT API client module with model management
+- `offline_voice_tree.py` (lines 1-1027): Main application
+- `greenpt.py` (lines 1-590): GreenPT API client module with model management
+- `ollama.py` (lines 1-590): Ollama API client module with model management
 - `tree.py` (lines 1-174): Hardware driver
 - `README.md`: Installation and usage guide
 - `INSTALL_PIPER.md`: Piper TTS installation instructions
 
 ---
 
-**Document Version**: 2.0
+**Document Version**: 2.1
 **Last Updated**: 2025-01-XX
 **Author**: Generated by Claude Code
 **License**: See project LICENSE
 
 **Recent Updates**:
+- Added Ollama integration for local LLM inference alongside GreenPT (cloud LLM)
+- New `--llm-provider` command-line argument to switch between GreenPT and Ollama
+- Created `ollama.py` module with identical interface to `greenpt.py`
 - Added Piper TTS support with command-line selection (`--tts-engine`)
 - Integrated `greenpt.py` module for AI-powered content generation
 - Added session-based repetition avoidance for jokes and flattery

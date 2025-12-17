@@ -251,10 +251,11 @@ graph TB
 * **Fully offline**: No internet connection required for core functionality
 * **Vosk speech recognition**: On-device speech-to-text using local models
 * **Flexible TTS**: Text-to-speech using pyttsx3 (espeak-ng) or Piper TTS (high-quality neural TTS)
-* **AI-powered commands** (optional): Dynamic joke and flattery generation via GreenPT API with session-based repetition avoidance
+* **Dual LLM provider support** (optional): Dynamic joke and flattery generation via GreenPT API (cloud) or Ollama (local) with session-based repetition avoidance
+* **Privacy-focused AI**: Choose between cloud LLM (GreenPT) or fully local LLM (Ollama) via `--llm-provider` argument
 * **Same command set**: Compatible with `my-voice-tree.py` commands
 * **Thread-based architecture**: Separate threads for voice recognition, LED control, and audio
-* **Command-line options**: Choose TTS engine via `--tts-engine` argument
+* **Command-line options**: Choose TTS engine via `--tts-engine` and LLM provider via `--llm-provider` arguments
 * **Graceful shutdown**: Handles CTRL-C cleanly without crashes
 
 ### Installation
@@ -322,6 +323,18 @@ graph TB
 
 # Auto-detect (default - prefers Piper if available)
 (xmastree) $ python offline_voice_tree.py --tts-engine auto
+```
+
+**With LLM provider selection**:
+```bash
+# Use GreenPT cloud API (default)
+(xmastree) $ python offline_voice_tree.py --llm-provider greenpt
+
+# Use local Ollama (requires Ollama running)
+(xmastree) $ python offline_voice_tree.py --llm-provider ollama
+
+# Combine TTS and LLM selections
+(xmastree) $ python offline_voice_tree.py --tts-engine piper --llm-provider ollama
 ```
 
 **Show help**:
@@ -420,9 +433,13 @@ The script supports two TTS engines:
    - See [INSTALL_PIPER.md](INSTALL_PIPER.md) for setup instructions
    - Set `PIPER_MODEL_PATH` environment variable to enable
 
-**GreenPT API Configuration** (optional, for joke and flatter commands):
+**LLM Provider Configuration** (optional, for joke and flatter commands):
 
-The `greenpt.py` module provides AI-powered joke and flattery generation. To use these features:
+The script supports two LLM providers for AI-powered jokes and flattery:
+
+#### Option 1: GreenPT (Cloud LLM)
+
+The `greenpt.py` module provides cloud-based AI content generation via the GreenPT API:
 
 1. Create a `local.env` file (or set environment variables):
    ```bash
@@ -433,18 +450,68 @@ The `greenpt.py` module provides AI-powered joke and flattery generation. To use
 
 2. The `greenpt.py` module automatically loads `local.env` if present.
 
-3. Run the script:
+3. Run the script with GreenPT (default):
    ```bash
-   (xmastree) $ python offline_voice_tree.py
+   (xmastree) $ python offline_voice_tree.py --llm-provider greenpt
    ```
 
-**Features of GreenPT integration**:
+**Features of GreenPT**:
+- Access to large, capable cloud LLM models
+- No local compute required
+- Requires internet connectivity and API key
+- May incur API costs
+
+#### Option 2: Ollama (Local LLM)
+
+The `ollama.py` module provides fully local AI content generation using Ollama:
+
+1. Install Ollama on your Raspberry Pi:
+   ```bash
+   # Download and install Ollama
+   curl -fsSL https://ollama.com/install.sh | sh
+   ```
+
+2. Pull a model (smaller models recommended for Raspberry Pi):
+   ```bash
+   # Recommended: LLaMA 3.2 3B model (suitable for Raspberry Pi)
+   ollama pull llama3.2:3b
+
+   # Alternative: Smaller Gemma 2B model
+   ollama pull gemma:2b
+   ```
+
+3. Start the Ollama server:
+   ```bash
+   ollama serve
+   ```
+
+4. (Optional) Set environment variables:
+   ```bash
+   export OLLAMA_API_BASE_URL="http://localhost:11434"  # default
+   export OLLAMA_MODEL_ID="llama3.2:3b"  # default
+   ```
+
+5. Run the script with Ollama:
+   ```bash
+   (xmastree) $ python offline_voice_tree.py --llm-provider ollama
+   ```
+
+**Features of Ollama**:
+- Fully local, offline AI inference
+- Complete privacy - no data leaves your device
+- No API costs
+- Requires local compute (2-8GB model + RAM)
+- Slower inference on Raspberry Pi
+
+#### Common Features
+
+Both providers support:
 - **Session-based repetition avoidance**: Jokes and flattery are tracked during the session to ensure variety
 - **Automatic model management**: Selected model is persisted across sessions
-- **Graceful degradation**: If API is unavailable, commands print a warning and continue operation
+- **Graceful degradation**: If unavailable, commands print a warning and continue operation
 - **Configurable prompts**: Randomized prompts ensure diverse content generation
 
-If the API key is not configured, the joke and flatter commands will print a warning and skip execution. All other commands continue to work normally.
+If no LLM provider is configured, the joke and flatter commands will print a warning and skip execution. All other commands continue to work normally.
 
 ---
 
@@ -514,16 +581,17 @@ The offline version is ideal for standalone installations where network connecti
 
 | Feature | my-voice-tree.py | offline_voice_tree.py |
 |---------|-----------------|----------------------|
-| Internet Required | ✅ Yes | ❌ No (optional for AI commands) |
+| Internet Required | ✅ Yes | ❌ No (optional for GreenPT only) |
 | Speech Recognition | AWS Transcribe | Vosk (local) |
 | Audio Playback | MP3 files | MP3 + pyttsx3/Piper TTS |
 | TTS Quality | N/A | pyttsx3 (basic) or Piper (high-quality neural) |
-| AI-Generated Content | ❌ No | ✅ Yes (joke/flatter via GreenPT with repetition avoidance) |
+| AI-Generated Content | ❌ No | ✅ Yes (joke/flatter via GreenPT [cloud] or Ollama [local]) |
+| LLM Options | N/A | GreenPT (cloud) or Ollama (fully local) |
 | Setup Complexity | Higher (AWS config) | Lower (model download) |
-| Cost | Pay-per-use AWS | Free (optional GreenPT API) |
+| Cost | Pay-per-use AWS | Free (optional GreenPT API) or Free (Ollama local) |
 | Latency | Network dependent | Local (faster) |
-| Privacy | Audio sent to AWS | Fully local (except AI commands) |
-| Best For | Cloud-enabled setups | Standalone/offline use |
+| Privacy | Audio sent to AWS | Fully local (Vosk + Ollama) or Hybrid (GreenPT) |
+| Best For | Cloud-enabled setups | Standalone/offline use with privacy options |
 
 ---
 
