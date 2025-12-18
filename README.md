@@ -436,6 +436,27 @@ The script supports two TTS engines:
    - Set `PIPER_MODEL_PATH` in `local.env` or as an environment variable
    - The script automatically loads `local.env` if present
    - The script searches common locations: `/usr/local/bin/piper/piper`, `/usr/local/bin/piper`, `/usr/bin/piper`, `~/.local/bin/piper`
+   
+   **Voice Models Available:**
+   - **US English**: `en_US-lessac-medium` (default), `en_US-lessac-high`, `en_US-joe-medium`
+   - **British English**: 
+     - `en_GB-aru-medium` - Standard British English (female, recommended)
+     - `en_GB-alba-medium` - Scottish accent (female)
+     - `en_GB-cori-medium` - British English (female)
+     - `northern_english_male` - Northern English (male)
+   - Browse all available voices at: https://huggingface.co/rhasspy/piper-voices/tree/v1.0.0
+   
+   **To use a British English voice (standard English accent):**
+   ```bash
+   # Download British English voice - Aru (standard English, not Scottish)
+   mkdir -p ~/.local/share/piper/models
+   cd ~/.local/share/piper/models
+   wget https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/aru/medium/en_GB-aru-medium.onnx
+   wget https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/aru/medium/en_GB-aru-medium.onnx.json
+   
+   # Add to local.env:
+   export PIPER_MODEL_PATH="$HOME/.local/share/piper/models/en_GB-aru-medium.onnx"
+   ```
 
 **Environment Variable Loading**:
 
