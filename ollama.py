@@ -16,7 +16,34 @@ import random
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
+try:
+    from dotenv import load_dotenv  # type: ignore
+except ImportError:
+    # dotenv is optional - if not installed, skip loading .env file
+    def load_dotenv(*args, **kwargs):
+        pass
+
 import requests  # type: ignore
+
+# -----------------------------------------------------------------------------
+# Load environment variables from local.env
+# -----------------------------------------------------------------------------
+
+# Load environment variables from local.env file (if it exists)
+# This happens at module import time, before reading the env vars below
+# Existing environment variables take precedence (override=False)
+try:
+    _local_env_path = Path(__file__).parent / "local.env"
+    if _local_env_path.exists():
+        # Convert Path to string for load_dotenv
+        load_dotenv(str(_local_env_path), override=False)
+        # Note: override=False means existing env vars take precedence
+except (NameError, AttributeError):
+    # __file__ might not be defined in some contexts (e.g., interactive Python)
+    # Try loading from current directory as fallback
+    _local_env_path = Path("local.env")
+    if _local_env_path.exists():
+        load_dotenv(str(_local_env_path), override=False)
 
 # -----------------------------------------------------------------------------
 # Configuration
