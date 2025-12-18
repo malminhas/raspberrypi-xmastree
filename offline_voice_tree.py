@@ -150,6 +150,9 @@ SING_MP3_PATH = str(Path(__file__).parent / "08-I-Wish-it-Could-be-Christmas-Eve
 # Default text to speak when "generate" command is used (since grammar prevents capturing text)
 DEFAULT_GENERATE_TEXT = "Hello everyone, this is your Christmas tree talking"
 
+# Hardcoded joke text if JOKE_TEXT environment variable is set (overrides API)
+HARDCODED_JOKE = os.environ.get("JOKE_TEXT", None)
+
 # LLM provider functions - will be set at runtime based on command line argument
 get_joke = None
 get_flattery = None
@@ -876,14 +879,18 @@ class AudioController(threading.Thread):
                         # Generate speech using pyttsx3, save to WAV, and play via VLC
                         self.generate_and_play_speech(self.state.text_to_speak)
                     elif self.state.audio_type == "joke":
-                        # Fetch a joke from GreenPT API and speak it
-                        joke = get_joke(previous_jokes=self.state.previous_jokes)
+                        # Use hardcoded joke if JOKE_TEXT is set, otherwise fetch from API
+                        if HARDCODED_JOKE:
+                            joke = HARDCODED_JOKE
+                        else:
+                            joke = get_joke(previous_jokes=self.state.previous_jokes)
                         if joke:
-                            # Track this joke to avoid repetition
-                            self.state.previous_jokes.append(joke)
-                            # Keep only the last 10 jokes to avoid prompt bloat
-                            if len(self.state.previous_jokes) > 10:
-                                self.state.previous_jokes.pop(0)
+                            # Track this joke to avoid repetition (only if not hardcoded)
+                            if not HARDCODED_JOKE:
+                                self.state.previous_jokes.append(joke)
+                                # Keep only the last 10 jokes to avoid prompt bloat
+                                if len(self.state.previous_jokes) > 10:
+                                    self.state.previous_jokes.pop(0)
                             self.generate_and_play_speech(joke)
                         else:
                             print("Failed to fetch joke from GreenPT API")
