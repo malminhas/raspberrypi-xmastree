@@ -176,7 +176,7 @@ graph LR
 
 3. **AWS Configuration**:
 
-   Create a `local.env` file with your AWS credentials:
+   Create a `local.env` file in the project root with your AWS credentials:
    ```bash
    export WORKING_DIR=/home/pi/Desktop/CODE/raspberrypi-xmastree
    export AWS_ACCESS_KEY_ID=your_access_key_here
@@ -184,10 +184,7 @@ graph LR
    export AWS_DEFAULT_REGION=us-west-2
    ```
 
-   Source the environment file:
-   ```bash
-   $ source local.env
-   ```
+   **Note**: The `my-voice-tree.py` script automatically loads `local.env` using python-dotenv, so you don't need to manually source it. However, if you're running commands from the terminal, you may still need to source it for those commands.
 
    Verify AWS configuration:
    ```bash
@@ -202,9 +199,14 @@ graph LR
 
 #### Running the Script
 
+The script automatically loads environment variables from `local.env` if present:
 ```bash
-(xmastree) $ source local.env
 (xmastree) $ python my-voice-tree.py
+```
+
+**Note**: If you need to use AWS CLI commands separately, you may still need to source `local.env`:
+```bash
+$ source local.env
 ```
 
 ### System Architecture
@@ -430,8 +432,27 @@ The script supports two TTS engines:
 2. **Piper TTS** (optional, higher quality):
    - Neural TTS with much better quality
    - Requires installation and model download
-   - See [INSTALL_PIPER.md](INSTALL_PIPER.md) for setup instructions
-   - Set `PIPER_MODEL_PATH` environment variable to enable
+   - Set `PIPER_EXECUTABLE_PATH` in `local.env` if piper is in a non-standard location
+   - Set `PIPER_MODEL_PATH` in `local.env` or as an environment variable
+   - The script automatically loads `local.env` if present
+   - The script searches common locations: `/usr/local/bin/piper/piper`, `/usr/local/bin/piper`, `/usr/bin/piper`, `~/.local/bin/piper`
+
+**Environment Variable Loading**:
+
+All Python scripts (`offline_voice_tree.py`, `greenpt.py`, `ollama.py`) automatically load environment variables from a `local.env` file in the project root using python-dotenv. This means you can create a single `local.env` file with all your configuration:
+
+```bash
+# Example local.env file
+export VOSK_MODEL_PATH="./model"
+export PIPER_EXECUTABLE_PATH="/usr/local/bin/piper/piper"  # Optional: if piper is in non-standard location
+export PIPER_MODEL_PATH="$HOME/.local/share/piper/models/en_US-lessac-medium.onnx"
+export GREENPT_API_KEY="your_api_key_here"
+export GREENPT_MODEL_ID="gemma-3-27b-it"
+export OLLAMA_API_BASE_URL="http://localhost:11434"
+export OLLAMA_MODEL_ID="gemma2:2b"
+```
+
+**Note**: Existing environment variables take precedence over values in `local.env` (override=False), so you can still override values via system environment variables if needed.
 
 **LLM Provider Configuration** (optional, for joke and flatter commands):
 
@@ -441,14 +462,14 @@ The script supports two LLM providers for AI-powered jokes and flattery:
 
 The `greenpt.py` module provides cloud-based AI content generation via the GreenPT API:
 
-1. Create a `local.env` file (or set environment variables):
+1. Create a `local.env` file in the project root (or set environment variables):
    ```bash
    export GREENPT_API_BASE_URL="https://api.greenpt.ai/v1"
    export GREENPT_API_KEY="your_api_key_here"
    export GREENPT_MODEL_ID="gemma-3-27b-it"  # optional, defaults to gemma-3-27b-it
    ```
 
-2. The `greenpt.py` module automatically loads `local.env` if present.
+2. The `greenpt.py` module automatically loads `local.env` if present (no need to source it).
 
 3. Run the script with GreenPT (default):
    ```bash
@@ -485,11 +506,13 @@ The `ollama.py` module provides fully local AI content generation using Ollama:
    ollama serve
    ```
 
-4. (Optional) Set environment variables:
+4. (Optional) Configure in `local.env` file (automatically loaded):
    ```bash
    export OLLAMA_API_BASE_URL="http://localhost:11434"  # default
-   export OLLAMA_MODEL_ID="llama3.2:3b"  # default
+   export OLLAMA_MODEL_ID="gemma2:2b"  # default, set to your preferred model
    ```
+
+   **Note**: The `ollama.py` module automatically loads `local.env` if present. You can also set these as system environment variables if preferred.
 
 5. Run the script with Ollama:
    ```bash
