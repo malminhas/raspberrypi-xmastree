@@ -50,9 +50,16 @@ import time
 from pathlib import Path
 from typing import Optional, Any  # for type hints compatible with Python < 3.10
 
+try:
+    from dotenv import load_dotenv  # type: ignore
+except ImportError:
+    # dotenv is optional - if not installed, skip loading .env file
+    def load_dotenv(*args, **kwargs):
+        pass
+
 from colorzero import Color, Hue # type: ignore
-from tree import RGBXmasTree  # Hardware driver for PiHut’s 3D Xmas tree
-# Import Vosk for offline speech recognition.  A small, local model (~50 MB)
+from tree import RGBXmasTree  # Hardware driver for PiHut's 3D Xmas tree
+# Import Vosk for offline speech recognition.  A small, local model (~50 MB)
 # must be downloaded separately; specify its directory via MODEL_PATH below.
 from vosk import Model, KaldiRecognizer # type: ignore
 # Import pyttsx3 for offline text‑to‑speech.  This uses the on‑board speech
@@ -88,6 +95,26 @@ else:
 
 # Set a fixed sample rate (Vosk models typically use 16 kHz)
 sd.default.samplerate = 16000
+
+# -----------------------------------------------------------------------------
+# Load environment variables from local.env
+# -----------------------------------------------------------------------------
+
+# Load environment variables from local.env file (if it exists)
+# This happens at module import time, before reading the env vars below
+# Existing environment variables take precedence (override=False)
+try:
+    _local_env_path = Path(__file__).parent / "local.env"
+    if _local_env_path.exists():
+        # Convert Path to string for load_dotenv
+        load_dotenv(str(_local_env_path), override=False)
+        # Note: override=False means existing env vars take precedence
+except (NameError, AttributeError):
+    # __file__ might not be defined in some contexts (e.g., interactive Python)
+    # Try loading from current directory as fallback
+    _local_env_path = Path("local.env")
+    if _local_env_path.exists():
+        load_dotenv(str(_local_env_path), override=False)
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -418,32 +445,58 @@ class AudioController(threading.Thread):
         self._configure_piper()
         self._configure_pyttsx3()
         self._select_tts_engine()
+        
+        # Store TTS info for configuration summary
+        self.tts_engine_name = None
+        self.tts_voice_or_model = None
+        self._store_tts_info()
     
     def _configure_piper(self) -> None:
         """Configure Piper TTS by finding executable and model path.
         
         Searches common installation locations for the Piper executable and
         reads the model path from the PIPER_MODEL_PATH environment variable.
+        The environment variables can be set in local.env or as system environment variables.
+        
+        Requirements:
+        - Piper executable must be installed and accessible via PATH, PIPER_EXECUTABLE_PATH, or in common locations
+        - PIPER_MODEL_PATH environment variable must be set to the .onnx model file path
+        
+        Environment variables:
+        - PIPER_EXECUTABLE_PATH: Explicit path to piper executable (checked first)
+        - PIPER_MODEL_PATH: Path to the .onnx model file
         """
         import shutil
         
-        # Check multiple possible locations for piper executable
-        possible_piper_paths = [
-            shutil.which("piper"),  # Check PATH first
-            "/usr/local/bin/piper",
-            "/usr/bin/piper",
-            os.path.expanduser("~/.local/bin/piper"),
-            "/usr/local/piper/piper",
-        ]
+        # First check for explicit path from environment variable
+        explicit_path = os.environ.get("PIPER_EXECUTABLE_PATH", None)
+        if explicit_path:
+            # Expand shell variables like $HOME and ~
+            explicit_path = os.path.expanduser(os.path.expandvars(explicit_path))
+            if os.path.isfile(explicit_path) and os.access(explicit_path, os.X_OK):
+                self.piper_executable = explicit_path
+        else:
+            # Check multiple possible locations for piper executable
+            possible_piper_paths = [
+                shutil.which("piper"),  # Check PATH first
+                "/usr/local/bin/piper/piper",  # Common subdirectory installation
+                "/usr/local/bin/piper",
+                "/usr/bin/piper",
+                os.path.expanduser("~/.local/bin/piper"),
+                "/usr/local/piper/piper",
+            ]
+            
+            # Find piper executable
+            for piper_path in possible_piper_paths:
+                if piper_path and os.path.isfile(piper_path) and os.access(piper_path, os.X_OK):
+                    self.piper_executable = piper_path
+                    break
         
-        # Find piper executable
-        for piper_path in possible_piper_paths:
-            if piper_path and os.path.isfile(piper_path) and os.access(piper_path, os.X_OK):
-                self.piper_executable = piper_path
-                break
-        
-        # Get model path from environment
+        # Get model path from environment and expand shell variables like $HOME and ~
         self.piper_model_path = os.environ.get("PIPER_MODEL_PATH", None)
+        if self.piper_model_path:
+            # Expand $HOME and other environment variables, and ~
+            self.piper_model_path = os.path.expanduser(os.path.expandvars(self.piper_model_path))
     
     def _configure_pyttsx3(self) -> None:
         """Configure pyttsx3 TTS engine with English voice selection.
@@ -520,9 +573,24 @@ class AudioController(threading.Thread):
                 self.use_piper = False
                 print("[TTS] Warning: Piper requested but not available, falling back to pyttsx3")
                 if not self.piper_executable:
-                    print("  Piper executable not found. See INSTALL_PIPER.md")
-                elif not self.piper_model_path or not os.path.exists(self.piper_model_path):
-                    print("  Piper model not configured. Set PIPER_MODEL_PATH environment variable")
+                    print("  Piper executable not found.")
+                    print("  Options:")
+                    print("    1. Set PIPER_EXECUTABLE_PATH in local.env, e.g.:")
+                    print("       export PIPER_EXECUTABLE_PATH=\"/usr/local/bin/piper/piper\"")
+                    print("    2. Install to a standard location:")
+                    print("       Download from https://github.com/rhasspy/piper/releases")
+                    print("       Then: sudo mv piper /usr/local/bin/piper && sudo chmod +x /usr/local/bin/piper")
+                    print("    3. Add piper to your PATH")
+                elif not self.piper_model_path:
+                    print("  PIPER_MODEL_PATH environment variable not set.")
+                    print("  Set it in local.env or as an environment variable, e.g.:")
+                    print("  export PIPER_MODEL_PATH=\"$HOME/.local/share/piper/models/en_US-lessac-medium.onnx\"")
+                    print("  Note: $HOME will be automatically expanded")
+                elif not os.path.exists(self.piper_model_path):
+                    print(f"  Piper model file not found: {self.piper_model_path}")
+                    print(f"  Expanded from: {os.environ.get('PIPER_MODEL_PATH', 'not set')}")
+                    print("  Download a model from: https://huggingface.co/rhasspy/piper-voices")
+                    print("  Or check that the path in local.env is correct")
         else:
             # Auto-detect: prefer Piper if available, otherwise pyttsx3
             if piper_available:
@@ -531,6 +599,32 @@ class AudioController(threading.Thread):
             else:
                 self.use_piper = False
                 print("[TTS] Using pyttsx3 (Piper not available)")
+    
+    def _store_tts_info(self) -> None:
+        """Store TTS engine and voice/model info for configuration summary."""
+        if self.use_piper:
+            self.tts_engine_name = "Piper TTS"
+            if self.piper_model_path:
+                self.tts_voice_or_model = os.path.basename(self.piper_model_path).replace('.onnx', '')
+            else:
+                self.tts_voice_or_model = "(unknown)"
+        else:
+            self.tts_engine_name = "pyttsx3"
+            if self.engine:
+                try:
+                    current_voice = self.engine.getProperty('voice')
+                    voices = self.engine.getProperty('voices')
+                    if voices and current_voice:
+                        for voice in voices:
+                            if voice.id == current_voice:
+                                self.tts_voice_or_model = voice.name
+                                break
+                    if not self.tts_voice_or_model:
+                        self.tts_voice_or_model = "(default)"
+                except:
+                    self.tts_voice_or_model = "(default)"
+            else:
+                self.tts_voice_or_model = "(default)"
 
     def play_mp3(self, path: str, duration: Optional[float] = None) -> None:
         """Play an MP3 or WAV file using VLC on the ReSpeaker 4-Mic board.
@@ -580,11 +674,12 @@ class AudioController(threading.Thread):
             player = instance.media_player_new()
             player.set_media(media)
 
-            # Reduce volume to 50%.  Volume is 0-100
-            player.audio_set_volume(50)
+            # Set volume (0-100 scale). Default is 75% for better audibility
+            volume = int(os.environ.get("VLC_VOLUME", 75))
+            player.audio_set_volume(volume)
 
-            # Give VLC a moment to initialize before playing
-            time.sleep(0.1)
+            # Give VLC a moment to initialize before playing (reduced from 0.1s to 0.05s)
+            time.sleep(0.01)
             player.play()
             
             # Wait a moment for playback to actually start
@@ -728,9 +823,18 @@ class AudioController(threading.Thread):
             if not success:
                 raise RuntimeError("Failed to generate speech")
             
-            # Wait for file to be ready
-            if not self._wait_for_audio_file(temp_wav_path):
-                raise FileNotFoundError(f"Audio file was not created or is empty: {temp_wav_path}")
+            # For Piper, subprocess.run already waits for completion, so minimal wait needed
+            # For pyttsx3, we still need to wait for file to be written
+            if self.use_piper:
+                # Piper subprocess.run already completed, just verify file exists
+                if not os.path.exists(temp_wav_path) or os.path.getsize(temp_wav_path) == 0:
+                    raise FileNotFoundError(f"Piper did not generate output file: {temp_wav_path}")
+                # Small delay to ensure file is fully flushed to disk
+                time.sleep(0.05)
+            else:
+                # pyttsx3 may need more time for file writing
+                if not self._wait_for_audio_file(temp_wav_path):
+                    raise FileNotFoundError(f"Audio file was not created or is empty: {temp_wav_path}")
             
             # Play the generated WAV file using VLC
             self.play_mp3(temp_wav_path)
@@ -1006,11 +1110,13 @@ Examples:
     # Import the appropriate LLM provider module
     global get_joke, get_flattery
     if args.llm_provider == 'ollama':
-        from ollama import get_joke, get_flattery
-        print(f"Using Ollama for LLM features (joke, flatter)")
+        from ollama import get_joke, get_flattery, get_model
+        llm_provider_name = "Ollama"
+        llm_model_name = get_model()
     else:
-        from greenpt import get_joke, get_flattery
-        print(f"Using GreenPT for LLM features (joke, flatter)")
+        from greenpt import get_joke, get_flattery, get_model
+        llm_provider_name = "GreenPT"
+        llm_model_name = get_model()
     
     print("Starting offline voice‑controlled Christmas tree…")
     # Instantiate the hardware tree.  Set brightness to a reasonable default.
@@ -1019,6 +1125,41 @@ Examples:
     led_thread = XmasTreeController(tree, STATE)
     audio_thread = AudioController(STATE, tts_preference=tts_preference)
     voice_thread = VoiceRecognizer(STATE)
+    
+    # Print configuration summary
+    vosk_model_path = os.path.expanduser(os.path.expandvars(MODEL_PATH))
+    # Try to determine the actual model name
+    vosk_model_name = os.environ.get("VOSK_MODEL_NAME", None)  # Allow explicit override
+    if not vosk_model_name:
+        model_path_obj = Path(vosk_model_path)
+        if model_path_obj.exists():
+            # Check if parent directory looks like a model name (contains "vosk-model")
+            parent = model_path_obj.parent
+            if parent.name.startswith("vosk-model"):
+                vosk_model_name = parent.name
+            else:
+                # Model is directly in the directory, try to find model name from zip files
+                # or use the directory name
+                project_dir = Path(__file__).parent
+                # Look for zip files that might indicate the model name
+                for zip_file in project_dir.glob("vosk-model-*.zip"):
+                    # Extract model name from zip filename
+                    potential_name = zip_file.stem  # filename without .zip
+                    if potential_name.startswith("vosk-model"):
+                        vosk_model_name = potential_name
+                        break
+                # If still not found, use directory name
+                if not vosk_model_name:
+                    vosk_model_name = os.path.basename(vosk_model_path)
+    vlc_volume = int(os.environ.get("VLC_VOLUME", 75))
+    print("=" * 60)
+    print("Configuration Summary")
+    print("=" * 60)
+    print(f"Vosk Model: {vosk_model_name}")
+    print(f"VLC Volume: {vlc_volume}%")
+    print(f"TTS Engine: {audio_thread.tts_engine_name} | Voice/Model: {audio_thread.tts_voice_or_model}")
+    print(f"LLM Provider: {llm_provider_name} | Model: {llm_model_name}")
+    print("-" * 60)
     led_thread.start()
     audio_thread.start()
     voice_thread.start()
