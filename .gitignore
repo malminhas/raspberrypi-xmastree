@@ -1,5 +1,7 @@
 local.env
 __pycache__/
 model/
+piper/
 vosk*
-selected_model.txt
+*.txt
+*.gz
