@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This repository contains experiments with PiHut's [3D Xmas Tree](https://thepihut.com/products/3d-xmas-tree-for-raspberry-pi). For detailed architecture documentation of the offline voice-controlled system, see [ARCHITECTURE.md](ARCHITECTURE.md). For development guidance, see [CLAUDE.md](CLAUDE.md).
+This repository contains experiments with PiHut's [3D Xmas Tree](https://thepihut.com/products/3d-xmas-tree-for-raspberry-pi). For detailed C4 style architecture documentation of the offline voice-controlled system, see [ARCHITECTURE.md](ARCHITECTURE.md). For development guidance, see [CLAUDE.md](CLAUDE.md).
 
 The project includes three main scripts:
 
