@@ -1241,32 +1241,38 @@ System Libraries:
 
 ### Runtime Environment
 
-```
-┌─────────────────────────────────────────┐
-│         Raspberry Pi OS                 │
-│                                         │
-│  ┌───────────────────────────────────┐ │
-│  │  Python 3.9+ Virtual Environment  │ │
-│  │  (with --system-site-packages)    │ │
-│  │                                   │ │
-│  │  ┌─────────────────────────────┐ │ │
-│  │  │  offline_voice_tree.py      │ │ │
-│  │  │  ├── VoiceRecognizer Thread │ │ │
-│  │  │  ├── XmasTreeController     │ │ │
-│  │  │  └── AudioController        │ │ │
-│  │  └─────────────────────────────┘ │ │
-│  │                                   │ │
-│  │  External Dependencies:           │ │
-│  │  ├── ./model/ (Vosk)             │ │
-│  │  ├── ./speech.mp3                │ │
-│  │  └── ./08-I-Wish...mp3           │ │
-│  └───────────────────────────────────┘ │
-│                                         │
-│  System Services:                       │
-│  ├── ALSA (audio)                       │
-│  ├── GPIO/SPI (hardware)                │
-│  └── espeak-ng (TTS)                    │
-└─────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph RaspberryPi["Raspberry Pi OS"]
+        subgraph VEnv["Python 3.9+ Virtual Environment<br/>(with --system-site-packages)"]
+            subgraph App["offline_voice_tree.py"]
+                VR["VoiceRecognizer Thread"]
+                XTC["XmasTreeController"]
+                AC["AudioController"]
+            end
+
+            subgraph Deps["External Dependencies"]
+                Model["./model/ (Vosk)"]
+                Speech["./speech.mp3"]
+                Song["./08-I-Wish...mp3"]
+            end
+        end
+
+        subgraph Services["System Services"]
+            ALSA["ALSA (audio)"]
+            GPIO["GPIO/SPI (hardware)"]
+            Espeak["espeak-ng (TTS)"]
+        end
+    end
+
+    App -.-> Deps
+    App -.-> Services
+
+    style RaspberryPi fill:#e1f5ff,stroke:#333,stroke-width:2px
+    style VEnv fill:#fff4e6,stroke:#333,stroke-width:2px
+    style App fill:#e8f5e9,stroke:#333,stroke-width:2px
+    style Deps fill:#fce4ec,stroke:#333,stroke-width:1px
+    style Services fill:#f3e5f5,stroke:#333,stroke-width:1px
 ```
 
 ### Startup Sequence (Systemd/rc.local)
