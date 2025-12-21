@@ -393,12 +393,15 @@ All threads share a `State` object for coordination and use `threading.Event` fo
 ### Supported Commands
 
 * **Colors**: `christmas tree red|green|blue|yellow|orange|purple|white|pink|brown|black`
-* **Modes**: `christmas tree disco|phase`
+* **Modes**:
+  * `christmas tree disco` - Random color cycling
+  * `christmas tree phase` - Synchronized hue cycling
+  * `christmas tree gb` - Display Union Jack flag pattern
 * **Audio**: `christmas tree speak` (plays `speech.mp3` file)
 * **Audio**: `christmas tree generate` (generates speech using selected TTS engine)
 * **Music**: `christmas tree sing` (plays configured song from `08-I-Wish-it-Could-be-Christmas-Everyday.mp3`)
-* **AI Commands** (requires GreenPT API):
-  * `christmas tree joke` (fetches and speaks a family-friendly joke, avoids repetition during session)
+* **AI Commands** (requires GreenPT API or Ollama):
+  * `christmas tree joke` (fetches and speaks a family-friendly joke with sparkle LED effect, avoids repetition during session)
   * `christmas tree flatter` (generates and speaks over-the-top praise, avoids repetition during session)
 
 ### Audio Playback
@@ -464,13 +467,28 @@ All Python scripts (`offline_voice_tree.py`, `greenpt.py`, `ollama.py`) automati
 
 ```bash
 # Example local.env file
+
+# Vosk speech recognition
 export VOSK_MODEL_PATH="./model"
+export VOSK_MODEL_NAME="vosk-model-small-en-us-0.15"  # Optional: override displayed model name
+
+# Piper TTS (optional, for high-quality neural TTS)
 export PIPER_EXECUTABLE_PATH="/usr/local/bin/piper/piper"  # Optional: if piper is in non-standard location
 export PIPER_MODEL_PATH="$HOME/.local/share/piper/models/en_US-lessac-medium.onnx"
+
+# GreenPT API (cloud LLM for jokes/flattery)
 export GREENPT_API_KEY="your_api_key_here"
 export GREENPT_MODEL_ID="gemma-3-27b-it"
+
+# Ollama (local LLM for jokes/flattery)
 export OLLAMA_API_BASE_URL="http://localhost:11434"
 export OLLAMA_MODEL_ID="gemma2:2b"
+
+# Audio playback
+export VLC_VOLUME="75"  # VLC volume percentage (0-100, default: 75)
+
+# Development/testing
+export JOKE_TEXT="Why did the Christmas tree go to the barber? It needed a trim!"  # Optional: hardcode joke for testing
 ```
 
 **Note**: Existing environment variables take precedence over values in `local.env` (override=False), so you can still override values via system environment variables if needed.

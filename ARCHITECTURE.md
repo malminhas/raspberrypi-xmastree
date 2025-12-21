@@ -258,6 +258,8 @@ C4Component
 | Transition Handler | Mode changes | LED initialization | Detects mode != current_mode, reinitializes colors |
 | Disco Animator | Timer | LED colors | Adds Hue(deg=10) to each LED group randomly |
 | Phase Animator | Timer | LED colors | Synchronously adds Hue(deg=10) to all LEDs |
+| Sparkle Animator | Timer | LED colors | Randomly assigns LEDs to bright, dim, or off states (25% bright, 25% dim, 50% off) |
+| GB Flag Pattern | Static | LED colors | Displays Union Jack approximation with red/white/blue pattern |
 | Color Setter | Mode string | LED colors | Converts color name to Color object |
 | LED Driver | RGB values | SPI data | Formats as [brightness, B, G, R] with start/end frames |
 
@@ -273,7 +275,7 @@ C4Component
 | pyttsx3 Engine | Text string | Spoken audio | espeak-ng backend with English voice selection |
 | LLM Client | Command type | Generated text | Fetches jokes/flattery from GreenPT (cloud) or Ollama (local) with session-based repetition avoidance |
 | WAV Generator | Text string | Temporary file | TTS generation + play_mp3() + cleanup |
-| Mode Manager | Playback start/end | Mode changes | Sets idle mode, restores last_mode after playback |
+| Mode Manager | Playback start/end | Mode changes | Sets sparkle mode for jokes, idle mode for other audio; restores last_mode after playback |
 
 ---
 
@@ -437,8 +439,8 @@ class State:
 
 4. **`process_command(utterance: str)`** (lines 481-519)
    - Matches utterance against regex: `christmas tree\s+(\w+)(?:\s+(.*))?`
-   - Updates `state.mode` for color/disco/phase commands
-   - Sets `state.audio_type` and signals `audio_event` for speak/sing/generate
+   - Updates `state.mode` for color/disco/phase/gb commands
+   - Sets `state.audio_type` and signals `audio_event` for speak/sing/generate/joke/flatter
 
 **Grammar Constraints** (line 435-436):
 ```python
@@ -462,6 +464,8 @@ This limits vocabulary to improve recognition accuracy.
    - Applies animation logic based on current mode:
      - **Disco**: Adds `Hue(deg=10)` to each LED group
      - **Phase**: Synchronously adds `Hue(deg=10)` to all LEDs
+     - **Sparkle**: Randomly assigns LEDs to bright (25%), dim (25%), or off (50%) states with twinkling star
+     - **Geebee**: Displays static Union Jack flag pattern (red/white/blue approximation)
      - **Color**: Sets solid `Color(mode)` across all LEDs
      - **Idle**: Turns off all LEDs (black)
 
@@ -511,9 +515,11 @@ The `plughw` plugin provides automatic sample rate conversion and channel mappin
 
 4. **`run()`** (lines 670-713)
    - Waits on `audio_event` with 0.5s timeout
-   - Switches to idle mode: `state.mode = "idle"`
+   - Switches mode based on audio type:
+     - **Joke**: Sets `state.mode = "sparkle"` (twinkling LED effect)
+     - **Other audio**: Sets `state.mode = "idle"` (LEDs off)
    - Routes based on `audio_type` ("speak", "sing", "generate", "joke", "flatter")
-   - For "joke": Calls `get_joke(previous_jokes=state.previous_jokes)`, tracks response
+   - For "joke": Calls `get_joke(previous_jokes=state.previous_jokes)`, tracks response, overridable via `JOKE_TEXT` env var
    - For "flatter": Calls `get_flattery(previous_flattery=state.previous_flattery)`, tracks response
    - Restores previous mode: `state.mode = state.last_mode`
    - Clears event and resets audio_type
@@ -670,19 +676,23 @@ if mode != self.current_mode:
                 self.tree[led].color = colours[i]
 ```
 
-### 5. Idle Mode During Audio Playback
+### 5. Visual Modes During Audio Playback
 
-**Decision**: Turn off LEDs (mode="idle") during speak/sing/generate
+**Decision**: Use sparkle mode for jokes, idle mode for other audio
 
 **Rationale**:
-- Focuses attention on audio output
+- Sparkle effect adds visual excitement to joke delivery
+- Idle mode (LEDs off) focuses attention on other audio content
 - Reduces visual distraction during TTS
 - Restores previous mode after playback completes
 
-**Implementation** (offline_voice_tree.py:389-406):
+**Implementation** (offline_voice_tree.py:867-870):
 ```python
 self.state.last_mode = self.state.mode
-self.state.mode = "idle"
+if self.state.audio_type == "joke":
+    self.state.mode = "sparkle"  # Twinkling LEDs for jokes
+else:
+    self.state.mode = "idle"     # LEDs off for other audio
 # ... play audio ...
 self.state.mode = self.state.last_mode
 ```
@@ -807,6 +817,43 @@ self.state.mode = self.state.last_mode
 - Better quality but larger resource footprint
 - pyttsx3 always available as fallback
 
+### 9. GB Flag Pattern and Sparkle Mode
+
+**Decision**: Add "geebee" (GB) mode for displaying Union Jack flag pattern and "sparkle" mode for twinkling LED effect
+
+**Rationale**:
+- GB flag pattern provides patriotic/festive display option
+- Static flag pattern is simple 5x5 grid approximation of Union Jack
+- Sparkle mode adds dynamic visual interest during joke playback
+- Both modes integrate seamlessly with existing mode transition logic
+
+**Implementation**:
+
+**GB Flag Pattern** (offline_voice_tree.py:270-283, 324-335, 387-399):
+- Triggered by "christmas tree gb" voice command
+- 5x5 LED grid displays red/white/blue pattern approximating Union Jack
+- Center horizontal line is red (St. George's Cross)
+- Diagonals and background suggest saltires and field colors
+- Static display (no animation)
+
+**Sparkle Mode** (offline_voice_tree.py:264-269, 318-323, 364-386):
+- Automatically triggered during joke playback
+- Dynamically assigns each LED per frame:
+  - 25% probability: bright color (red/green/blue/yellow/orange/purple/white/pink)
+  - 25% probability: dim color (darkred/darkgreen/darkblue/darkorange/darkviolet)
+  - 50% probability: off (black)
+- Star LED tinkles between white (70%) and gray (30%)
+- Creates twinkling/sparkling visual effect synchronized with joke audio
+
+**Commands**:
+- `christmas tree gb`: Display GB flag pattern
+- Sparkle mode: Automatic during joke playback (not directly commandable)
+
+**Trade-offs**:
+- GB flag approximation limited by 5x5 LED grid resolution
+- Sparkle mode not user-commandable (only triggered by joke command)
+- Both modes add minimal code complexity (~50 lines total)
+
 ---
 
 ## Threading Model
@@ -905,7 +952,7 @@ sequenceDiagram
 STATE = State()  # Global instance
 
 class State:
-    mode: str           # "disco" | "phase" | color_name | "idle"
+    mode: str           # "disco" | "phase" | "sparkle" | "geebee" | color_name | "idle"
     last_mode: str      # Previous mode before audio playback
     text_to_speak: str  # Text for generate command
     audio_event: threading.Event  # Audio trigger
@@ -924,30 +971,57 @@ stateDiagram-v2
     disco --> red : "christmas tree red"
     disco --> green : "christmas tree green"
     disco --> phase : "christmas tree phase"
-    disco --> idle : Audio command
+    disco --> geebee : "christmas tree gb"
+    disco --> idle : Audio command (non-joke)
+    disco --> sparkle : Joke command
 
     red --> disco : "christmas tree disco"
     red --> green : "christmas tree green"
     red --> phase : "christmas tree phase"
-    red --> idle : Audio command
+    red --> geebee : "christmas tree gb"
+    red --> idle : Audio command (non-joke)
+    red --> sparkle : Joke command
 
     green --> disco : "christmas tree disco"
     green --> red : "christmas tree red"
     green --> phase : "christmas tree phase"
-    green --> idle : Audio command
+    green --> geebee : "christmas tree gb"
+    green --> idle : Audio command (non-joke)
+    green --> sparkle : Joke command
 
     phase --> disco : "christmas tree disco"
     phase --> red : "christmas tree red"
-    phase --> idle : Audio command
+    phase --> geebee : "christmas tree gb"
+    phase --> idle : Audio command (non-joke)
+    phase --> sparkle : Joke command
+
+    geebee --> disco : "christmas tree disco"
+    geebee --> red : "christmas tree red"
+    geebee --> phase : "christmas tree phase"
+    geebee --> idle : Audio command (non-joke)
+    geebee --> sparkle : Joke command
 
     idle --> disco : Audio complete (last_mode=disco)
     idle --> red : Audio complete (last_mode=red)
     idle --> green : Audio complete (last_mode=green)
     idle --> phase : Audio complete (last_mode=phase)
+    idle --> geebee : Audio complete (last_mode=geebee)
+
+    sparkle --> disco : Audio complete (last_mode=disco)
+    sparkle --> red : Audio complete (last_mode=red)
+    sparkle --> green : Audio complete (last_mode=green)
+    sparkle --> phase : Audio complete (last_mode=phase)
+    sparkle --> geebee : Audio complete (last_mode=geebee)
 
     note right of idle
         LEDs off during
         audio playback
+        (non-joke commands)
+    end note
+
+    note right of sparkle
+        LEDs twinkle during
+        joke playback
     end note
 ```
 
@@ -1069,11 +1143,16 @@ flowchart TD
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `VOSK_MODEL_PATH` | `./model` | Path to Vosk speech recognition model directory |
+| `VOSK_MODEL_NAME` | (auto-detected) | Optional override for displayed model name in startup summary |
+| `PIPER_EXECUTABLE_PATH` | (auto-detected) | Optional explicit path to Piper TTS executable |
+| `PIPER_MODEL_PATH` | (required for Piper) | Path to Piper TTS .onnx model file |
 | `GREENPT_API_BASE_URL` | `https://api.greenpt.ai/v1` | Base URL for GreenPT API (cloud LLM provider) |
 | `GREENPT_API_KEY` | `""` (empty) | Authentication key for GreenPT API (required for joke/flatter commands with GreenPT) |
 | `GREENPT_MODEL_ID` | `gemma-3-27b-it` | Model ID to use for GreenPT API requests |
 | `OLLAMA_API_BASE_URL` | `http://localhost:11434` | Base URL for Ollama API (local LLM provider) |
 | `OLLAMA_MODEL_ID` | `llama3.2:3b` | Model ID to use for Ollama API requests |
+| `VLC_VOLUME` | `75` | VLC audio playback volume percentage (0-100) |
+| `JOKE_TEXT` | (none) | Optional hardcoded joke text for testing (overrides API calls) |
 
 ### Constants (offline_voice_tree.py:91-124)
 
@@ -1081,7 +1160,7 @@ flowchart TD
 |----------|-------|-------------|
 | `MODEL_PATH` | `$VOSK_MODEL_PATH` or `./model` | Vosk model directory |
 | `SUPPORTED_COLOURS` | `["red", "green", "blue", ...]` | 10 recognized colors |
-| `SUPPORTED_COMMANDS` | `["disco", "phase", "speak", "generate", "sing", "joke", "flatter"]` | Non-color commands |
+| `SUPPORTED_COMMANDS` | `["disco", "phase", "speak", "generate", "sing", "joke", "flatter", "gb"]` | Non-color commands |
 | TTS engine selection | Command-line `--tts-engine` argument | "auto", "piper", or "pyttsx3" |
 | LLM provider selection | Command-line `--llm-provider` argument | "greenpt" (default) or "ollama" |
 | `DEFAULT_SPEECH_DURATION` | `10` | Seconds to play speech.mp3 |
@@ -1102,7 +1181,7 @@ flowchart TD
 | LED count | 25 RGB + 1 white | 3D Christmas tree hardware |
 | Brightness | 0.1 (10%) | Adjustable in main() |
 | TTS rate | espeak rate - 25 | Slower for clarity |
-| Audio volume | 50% | VLC volume setting |
+| Audio volume | 75% (default) | VLC volume setting (configurable via VLC_VOLUME env var) |
 
 ---
 
