@@ -1244,24 +1244,29 @@ System Libraries:
 ```mermaid
 graph TB
     subgraph RaspberryPi["Raspberry Pi OS"]
-        subgraph VEnv["Python 3.9+ Virtual Environment<br/>(with --system-site-packages)"]
+        subgraph VEnv["Python 3.9+ Virtual Environment (with --system-site-packages)"]
             subgraph App["offline_voice_tree.py"]
-                VR["VoiceRecognizer Thread"]
-                XTC["XmasTreeController"]
-                AC["AudioController"]
+                VR["VoiceRecognizer<br/>Thread"]
+                XTC["XmasTree<br/>Controller"]
+                AC["Audio<br/>Controller"]
             end
 
+            AppSpacer1[" "]
+            AppSpacer2[" "]
+
             subgraph Deps["External Dependencies"]
-                Model["./model/ (Vosk)"]
+                Model["./model/<br/>(Vosk)"]
                 Speech["./speech.mp3"]
                 Song["./08-I-Wish...mp3"]
             end
         end
 
+        VenvSpacer[" "]
+
         subgraph Services["System Services"]
-            ALSA["ALSA (audio)"]
-            GPIO["GPIO/SPI (hardware)"]
-            Espeak["espeak-ng (TTS)"]
+            ALSA["ALSA<br/>(audio)"]
+            GPIO["GPIO/SPI<br/>(hardware)"]
+            Espeak["espeak-ng<br/>(TTS)"]
         end
     end
 
@@ -1273,6 +1278,9 @@ graph TB
     style App fill:#e8f5e9,stroke:#333,stroke-width:2px
     style Deps fill:#fce4ec,stroke:#333,stroke-width:1px
     style Services fill:#f3e5f5,stroke:#333,stroke-width:1px
+    style AppSpacer1 fill:none,stroke:none
+    style AppSpacer2 fill:none,stroke:none
+    style VenvSpacer fill:none,stroke:none
 ```
 
 ### Startup Sequence (Systemd/rc.local)
