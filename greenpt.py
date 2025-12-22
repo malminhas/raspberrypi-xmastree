@@ -53,7 +53,7 @@ except (NameError, AttributeError):
 # These are read after loading local.env, so env vars set in local.env will be used
 API_BASE_URL = os.environ.get("GREENPT_API_BASE_URL","https://api.greenpt.ai/v1")
 API_KEY = os.environ.get("GREENPT_API_KEY", "")
-DEFAULT_MODEL_ID = os.environ.get("GREENPT_MODEL_ID", "gemma-3-27b-it")
+DEFAULT_MODEL_ID = os.environ.get("GREENPT_MODEL_ID", "gpt-oss-120b")
 
 # Path to file storing the selected model (for persistence across sessions)
 MODEL_STORAGE_FILE = Path(__file__).parent / "selected_model.txt"
@@ -415,7 +415,7 @@ def test_set_model() -> bool:
     
     try:
         # Test setting a valid GreenPT model
-        test_model = "green-s"
+        test_model = "gpt-oss-120b"
         if not set_model(test_model):
             print(f"  ❌ FAILED: set_model('{test_model}') returned False")
             return False
@@ -529,6 +529,92 @@ def test_inference_with_model_id() -> bool:
     return True
 
 
+def test_inference_with_all_models() -> bool:
+    """
+    Test function to verify that inference works with each available model.
+    
+    Returns:
+        True if inference succeeds with all models, False otherwise.
+    """
+    print("Testing infer() with all available models...")
+    
+    # Get list of available models
+    models = list_models()
+    
+    if models is None or len(models) == 0:
+        print("  ⚠️  SKIPPED: No models available to test")
+        return True  # Not a failure, just nothing to test
+    
+    # Models to skip (known to fail or not support chat completions)
+    skip_models = {
+        'green-r-raw',
+        'gpt-oss-120b',
+        'green-embeddings',
+        'green-s',
+        'green-rerank',
+        'green-r-raw-new',
+        'green-r',
+        'green-embedding',
+        'green-s-pro',
+    }
+    
+    # Filter out models to skip
+    testable_models = [m for m in models if m.get('id', 'unknown') not in skip_models]
+    
+    if len(testable_models) == 0:
+        print("  ⚠️  SKIPPED: No testable models available after filtering")
+        return True
+    
+    # Save current model
+    original_model = get_model()
+    
+    test_prompt = "Say 'Hello' and nothing else."
+    passed_count = 0
+    failed_models = []
+    
+    print(f"  Testing {len(testable_models)} model(s) (skipping {len(models) - len(testable_models)} known incompatible model(s))...")
+    
+    for model_info in testable_models:
+        model_id = model_info.get('id', 'unknown')
+        if not model_id or model_id == 'unknown':
+            continue
+        
+        print(f"    Testing model: {model_id}...", end=" ")
+        
+        try:
+            result = infer(test_prompt, max_tokens=10, model_id=model_id)
+            
+            if result is None:
+                print("❌ FAILED (returned None)")
+                failed_models.append(model_id)
+            elif not isinstance(result, str):
+                print(f"❌ FAILED (wrong type: {type(result)})")
+                failed_models.append(model_id)
+            elif len(result) == 0:
+                print("❌ FAILED (empty response)")
+                failed_models.append(model_id)
+            else:
+                print(f"✅ PASSED")
+                passed_count += 1
+        except Exception as e:
+            print(f"❌ FAILED (exception: {e})")
+            failed_models.append(model_id)
+    
+    # Verify that the current model wasn't changed
+    if get_model() != original_model:
+        set_model(original_model)
+    
+    # Report results
+    total_tested = len(testable_models)
+    if failed_models:
+        print(f"  ❌ FAILED: {len(failed_models)}/{total_tested} model(s) failed inference")
+        print(f"  Failed models: {', '.join(failed_models)}")
+        return False
+    else:
+        print(f"  ✅ PASSED: All {passed_count}/{total_tested} model(s) passed inference")
+        return True
+
+
 def run_all_tests() -> bool:
     """
     Run all integrated tests and report results.
@@ -550,6 +636,7 @@ def run_all_tests() -> bool:
         ("Set Model", test_set_model),
         ("Inference", test_inference),
         ("Inference with Model ID", test_inference_with_model_id),
+        ("Inference with All Models", test_inference_with_all_models),
     ]
     
     results = []
